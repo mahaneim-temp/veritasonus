@@ -44,4 +44,7 @@ export const ENV = {
     process.env.PARSER_POLL_INTERVAL_MS ?? 5000,
   ),
   PARSER_STORAGE_BUCKET: process.env.PARSER_STORAGE_BUCKET ?? "uploads",
+  RECONSTRUCT_POLL_INTERVAL_MS: Number(
+    process.env.RECONSTRUCT_POLL_INTERVAL_MS ?? 10_000,
+  ),
 };

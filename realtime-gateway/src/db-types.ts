@@ -159,6 +159,50 @@ export interface Database {
         };
         Relationships: [];
       };
+      reconstructions: {
+        Row: {
+          id: string;
+          session_id: string;
+          status: "pending" | "running" | "done" | "failed";
+          include_recording: boolean;
+          reconstructed_text: string | null;
+          summary: string | null;
+          key_decisions: Json | null;
+          action_items: Json | null;
+          important_numbers: Json | null;
+          requested_at: string;
+          completed_at: string | null;
+          error_message: string | null;
+          retry_count: number;
+        };
+        Insert: {
+          id?: string;
+          session_id: string;
+          status?: "pending" | "running" | "done" | "failed";
+          include_recording?: boolean;
+          reconstructed_text?: string | null;
+          summary?: string | null;
+          key_decisions?: Json | null;
+          action_items?: Json | null;
+          important_numbers?: Json | null;
+          requested_at?: string;
+          completed_at?: string | null;
+          error_message?: string | null;
+          retry_count?: number;
+        };
+        Update: {
+          status?: "pending" | "running" | "done" | "failed";
+          reconstructed_text?: string | null;
+          summary?: string | null;
+          key_decisions?: Json | null;
+          action_items?: Json | null;
+          important_numbers?: Json | null;
+          completed_at?: string | null;
+          error_message?: string | null;
+          retry_count?: number;
+        };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {};
