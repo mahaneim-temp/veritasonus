@@ -43,6 +43,12 @@ export interface ProviderHandle {
   interrupt(): void;
   /** Assist 텍스트 생성 요청. 완료 시 emit.onAssistText 콜백. */
   assist(intent: string, priorText?: string): Promise<void>;
+  /**
+   * 원문 → 대상 언어 번역. 세션 핸들러가 최종 원문 확정 시점에 직접 호출.
+   * - Google: Cloud Translation v2 HTTP.
+   * - OpenAI Realtime: no-op (OpenAI 가 스트림 내에서 자체 번역을 이미 흘려보냄).
+   */
+  translate(text: string): Promise<string>;
   /** 세션 종료. 업스트림 스트림/커넥션 정리. */
   close(): Promise<void>;
 }

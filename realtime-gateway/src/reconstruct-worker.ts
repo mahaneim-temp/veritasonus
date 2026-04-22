@@ -19,6 +19,7 @@ import { logger } from "./logger.js";
 import type { Database, Json } from "./db-types.js";
 import { runReconstruction, callOpenAIChat } from "./reconstruct.js";
 import { callGeminiChat } from "./providers/gemini.js";
+import { errToStr } from "./err-util.js";
 
 type ReconRow = Database["public"]["Tables"]["reconstructions"]["Row"];
 
@@ -67,7 +68,7 @@ async function tick(log: PinoLogger): Promise<void> {
     .order("requested_at", { ascending: true })
     .limit(1);
   if (selErr) {
-    log.warn({ err: String(selErr) }, "reconstruct_select_failed");
+    log.warn({ err: errToStr(selErr) }, "reconstruct_select_failed");
     return;
   }
   if (!candidates || candidates.length === 0) return;
@@ -81,7 +82,7 @@ async function tick(log: PinoLogger): Promise<void> {
     .select("*")
     .maybeSingle();
   if (claimErr) {
-    log.warn({ err: String(claimErr), id }, "reconstruct_claim_failed");
+    log.warn({ err: errToStr(claimErr), id }, "reconstruct_claim_failed");
     return;
   }
   if (!claimed) return;
@@ -112,7 +113,7 @@ async function processOne(row: ReconRow, log: PinoLogger): Promise<void> {
       .eq("id", row.id);
     if (upErr) {
       log.error(
-        { id: row.id, err: String(upErr) },
+        { id: row.id, err: errToStr(upErr) },
         "reconstruct_write_done_failed",
       );
     } else {
@@ -146,7 +147,7 @@ async function processOne(row: ReconRow, log: PinoLogger): Promise<void> {
     .eq("id", row.id);
   if (upErr) {
     log.warn(
-      { id: row.id, err: String(upErr) },
+      { id: row.id, err: errToStr(upErr) },
       "reconstruct_mark_failed_also_failed",
     );
   }

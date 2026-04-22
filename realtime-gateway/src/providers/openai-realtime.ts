@@ -140,6 +140,12 @@ class OpenAISession implements ProviderHandle {
     this.send({ type: "response.cancel" });
   }
 
+  async translate(_text: string): Promise<string> {
+    // OpenAI Realtime 은 WS 스트림 안에서 자체 번역을 흘려보낸다 (response.audio_transcript.done).
+    // 별도 번역 호출 불필요. 빈 문자열 반환 시 세션 핸들러가 기존 onTranslationFinal 콜백을 대기.
+    return "";
+  }
+
   async assist(intent: string, priorText?: string): Promise<void> {
     const prompt =
       ASSIST_SYSTEM_FOR_INTENT[intent] ?? ASSIST_SYSTEM_FOR_INTENT["assist"]!;

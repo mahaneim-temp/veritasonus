@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { useState } from "react";
 import { NetworkStatus } from "@/components/shell/NetworkStatus";
 import { LiveTranscript } from "@/components/session/LiveTranscript";
 import { ControlBar } from "@/components/session/ControlBar";
@@ -14,9 +14,9 @@ const LEGAL_VERSION = "2026-04-22";
 export default function ListenerPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id } = use(params);
+  const { id } = params;
   const [source, setSource] = useState<"mic" | "tab_audio">("mic");
   const [started, setStarted] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);

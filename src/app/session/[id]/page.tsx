@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { NetworkStatus } from "@/components/shell/NetworkStatus";
 import { LiveTranscript } from "@/components/session/LiveTranscript";
@@ -19,10 +19,10 @@ import { useInterpretSession } from "@/hooks/useInterpretSession";
 export default function SessionPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
   const router = useRouter();
-  const { id } = use(params);
+  const { id } = params;
   const [preflightOk, setPreflightOk] = useState(false);
   const [showCorrected, setShowCorrected] = useState(false);
 

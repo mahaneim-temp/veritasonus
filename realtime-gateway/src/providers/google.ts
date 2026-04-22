@@ -159,13 +159,10 @@ class GoogleSession implements ProviderHandle {
         return;
       }
 
-      // final → 번역 호출
+      // final → 원문만 emit. 번역은 세션 핸들러가 병합 판단 후 translate() 로 별도 호출.
       const confidence = result.alternatives[0].confidence ?? null;
       this.opts.emit.onSourceFinal(text, confidence);
       this.lastFinalSeq += 1;
-      const currentSeq = this.lastFinalSeq;
-
-      void this.translateAndEmit(text, currentSeq);
     });
 
     stream.on("end", () => {
@@ -180,15 +177,16 @@ class GoogleSession implements ProviderHandle {
     );
   }
 
-  private async translateAndEmit(text: string, _seq: number): Promise<void> {
+  async translate(text: string): Promise<string> {
+    const body = text.trim();
+    if (!body) return "";
     try {
-      const target = this.opts.targetLang.split("-")[0] ?? this.opts.targetLang; // 'en', 'ko' 등
-      const [translated] = await translateClient().translate(text, target);
-      this.opts.emit.onTranslationFinal(translated);
+      const target = this.opts.targetLang.split("-")[0] ?? this.opts.targetLang;
+      const [translated] = await translateClient().translate(body, target);
+      return translated;
     } catch (e) {
       this.opts.log.warn({ err: String(e) }, "google_translate_failed");
-      // 번역 실패해도 원문은 이미 emit 됨. 빈 번역으로 대체.
-      this.opts.emit.onTranslationFinal("");
+      return "";
     }
   }
 

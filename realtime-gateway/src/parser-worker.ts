@@ -24,6 +24,7 @@ import { ENV } from "./env.js";
 import { logger } from "./logger.js";
 import type { Database } from "./db-types.js";
 import { extractText, ParseError } from "./parser.js";
+import { errToStr } from "./err-util.js";
 
 type AssetRow = Database["public"]["Tables"]["session_assets"]["Row"];
 
@@ -73,7 +74,7 @@ async function tick(log: PinoLogger): Promise<void> {
     .order("created_at", { ascending: true })
     .limit(1);
   if (selErr) {
-    log.warn({ err: String(selErr) }, "parser_select_failed");
+    log.warn({ err: errToStr(selErr) }, "parser_select_failed");
     return;
   }
   if (!candidates || candidates.length === 0) return;
@@ -88,7 +89,7 @@ async function tick(log: PinoLogger): Promise<void> {
     .select("*")
     .maybeSingle();
   if (claimErr) {
-    log.warn({ err: String(claimErr), id }, "parser_claim_failed");
+    log.warn({ err: errToStr(claimErr), id }, "parser_claim_failed");
     return;
   }
   if (!claimed) {
@@ -162,7 +163,7 @@ async function processOne(
       .eq("id", id);
     if (upErr) {
       log.warn(
-        { id, err: String(upErr) },
+        { id, err: errToStr(upErr) },
         "parser_failed_mark_failed_also_failed",
       );
     }

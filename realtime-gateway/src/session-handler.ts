@@ -42,6 +42,21 @@ import type { ProviderHandle } from "./providers/types.js";
 const TRIAL_TICK_MS = 5_000;
 const TRIAL_TICK_DECREMENT_S = 5;
 
+/**
+ * 짧은 final 을 홀드할 최대 시간(ms). 이 창 내에 다음 final 이 오면 병합.
+ * 너무 크면 실시간성 훼손, 너무 작으면 "네.", "예." 같은 조각 파편화.
+ * 800ms 가 보통의 말 사이 쉼보다는 짧고 조각 응답 간격보다는 큰 경계값.
+ */
+const MERGE_WINDOW_MS = 800;
+/** 이 글자 수 이하면 "짧은 final" 로 간주해 병합 대상이 된다. */
+const MERGE_SHORT_CHAR_THRESHOLD = 6;
+
+interface PendingShort {
+  text: string;
+  confidence: number | null;
+  timer: NodeJS.Timeout;
+}
+
 interface SessionCtx {
   claims: RealtimeClaims;
   provider: ProviderHandle | null;
@@ -53,6 +68,18 @@ interface SessionCtx {
   usageFinalized: boolean;
   /** 가장 최근의 원문 (assist 컨텍스트용). */
   lastSourceText: string;
+  /** 병합 버퍼. 짧은 final 이 들어오면 여기에 보관, 다음 final 과 merge 또는 timeout 시 단독 flush. */
+  pendingShort: PendingShort | null;
+  /** openProvider 가 주입. 세션 종료 직전 pending 짧은 조각을 단독 확정하는 훅. */
+  flushPendingShort: () => void;
+}
+
+function flushPendingShortOnCtx(ctx: SessionCtx): void {
+  try {
+    ctx.flushPendingShort();
+  } catch {
+    // ignore
+  }
 }
 
 // 로컬 dev 편의를 위해 import 해두되, 실제 언어는 sessions row 에서 읽어와야 정확.
@@ -121,6 +148,10 @@ export async function handleConnection(
           liveStartedAtMs: Date.now(),
           usageFinalized: false,
           lastSourceText: "",
+          pendingShort: null,
+          flushPendingShort: () => {
+            /* openProvider 가 덮어씀 */
+          },
         };
         log.info(
           { session: claims.session_id, owner: claims.owner_type },
@@ -198,6 +229,7 @@ export async function handleConnection(
         );
         break;
       case "control.end":
+        flushPendingShortOnCtx(ctx);
         await finalizeUsageIfNeeded(ctx, log);
         await markSessionState(ctx.claims.session_id, "ended");
         try {
@@ -215,6 +247,7 @@ export async function handleConnection(
   ws.on("close", async (code, reason) => {
     clearTimeout(authDeadline);
     if (ctx?.trialTimer) clearInterval(ctx.trialTimer);
+    if (ctx) flushPendingShortOnCtx(ctx);
     try {
       await ctx?.provider?.close();
     } catch {
@@ -243,6 +276,71 @@ async function openProvider(
   log.info({ provider: provider.name }, "provider_selected");
   const { source, target } = langsFromClaims(ctx.claims);
 
+  // 실제 확정된 최종 텍스트를 persist + emit + translate.
+  // 병합 버퍼(pendingShort)를 경유한 최종 텍스트만 여기로 흘러든다.
+  const commitFinal = (text: string, confidence: number | null) => {
+    ctx.utteranceSeq += 1;
+    const seq = ctx.utteranceSeq;
+    ctx.lastSourceSeq = seq;
+    ctx.lastSourceText = text;
+
+    void writeUtterance({
+      session_id: ctx.claims.session_id,
+      seq,
+      speaker_label: "speaker",
+      source_text: text,
+      confidence_level: "high",
+      confidence_score: confidence ?? null,
+      requires_review: false,
+      flags: [],
+    }).catch((e) =>
+      log.warn({ err: String(e) }, "write_utterance_failed"),
+    );
+    emitToClient({
+      type: "speech_final",
+      seq,
+      text,
+      confidence_score: confidence ?? 0,
+    });
+
+    // 번역은 확정 직후 명시적 호출.
+    // Google provider: HTTP 1회. OpenAI Realtime: translate()=no-op, onTranslationFinal 경로로 비동기 수신.
+    const handleRef = ctx.provider;
+    if (handleRef) {
+      void handleRef
+        .translate(text)
+        .then((tr) => {
+          if (!tr) return; // 빈 문자열이면 emit 생략 — 별도 경로(OpenAI) 가 나중에 emit 함.
+          void updateUtteranceTranslation(
+            ctx.claims.session_id,
+            seq,
+            tr,
+          ).catch((e) =>
+            log.warn({ err: String(e) }, "update_translation_failed"),
+          );
+          emitToClient({
+            type: "translation_final",
+            seq,
+            text: tr,
+            confidence_level: "high",
+            confidence_score: 0.9,
+            flags: [],
+          });
+        })
+        .catch((e) =>
+          log.warn({ err: String(e) }, "translate_failed_in_commit"),
+        );
+    }
+  };
+
+  const flushPendingShort = () => {
+    const p = ctx.pendingShort;
+    if (!p) return;
+    clearTimeout(p.timer);
+    ctx.pendingShort = null;
+    commitFinal(p.text, p.confidence);
+  };
+
   const handle = await provider.start({
     sessionId: ctx.claims.session_id,
     sourceLang: source,
@@ -250,29 +348,42 @@ async function openProvider(
     log,
     emit: {
       onSourceFinal: (text, confidence) => {
-        ctx.utteranceSeq += 1;
-        ctx.lastSourceSeq = ctx.utteranceSeq;
-        ctx.lastSourceText = text;
-        void writeUtterance({
-          session_id: ctx.claims.session_id,
-          seq: ctx.utteranceSeq,
-          speaker_label: "speaker",
-          source_text: text,
-          confidence_level: "high",
-          confidence_score: confidence ?? null,
-          requires_review: false,
-          flags: [],
-        }).catch((e) =>
-          log.warn({ err: String(e) }, "write_utterance_failed"),
-        );
-        emitToClient({
-          type: "speech_final",
-          seq: ctx.utteranceSeq,
-          text,
-          confidence_score: confidence ?? 0,
-        });
+        const body = text.trim();
+        if (!body) return;
+
+        // 1) 보류 중인 짧은 조각이 있으면 이번 final 과 합친다.
+        const pending = ctx.pendingShort;
+        if (pending) {
+          clearTimeout(pending.timer);
+          ctx.pendingShort = null;
+          const merged = `${pending.text} ${body}`;
+          const mergedConf =
+            confidence != null && pending.confidence != null
+              ? Math.min(confidence, pending.confidence)
+              : (confidence ?? pending.confidence);
+          commitFinal(merged, mergedConf);
+          return;
+        }
+
+        // 2) 현재 final 이 짧으면 다음 것 기다리며 버퍼에 보관.
+        if (body.length <= MERGE_SHORT_CHAR_THRESHOLD) {
+          const timer = setTimeout(() => {
+            // window 내에 이어지는 final 이 없었다 — 단독 확정.
+            const p = ctx.pendingShort;
+            if (!p) return;
+            ctx.pendingShort = null;
+            commitFinal(p.text, p.confidence);
+          }, MERGE_WINDOW_MS);
+          ctx.pendingShort = { text: body, confidence, timer };
+          return;
+        }
+
+        // 3) 일반 경로.
+        commitFinal(body, confidence);
       },
       onTranslationFinal: (text) => {
+        // OpenAI Realtime 처럼 provider 가 별도 경로로 번역을 밀어넣는 경우에만 쓰임.
+        // Google 의 경우 commitFinal 내부에서 직접 처리하므로 이쪽으로 안 들어온다.
         if (ctx.lastSourceSeq === 0) {
           log.warn({ text }, "translation_before_source");
           return;
@@ -309,6 +420,7 @@ async function openProvider(
   });
 
   ctx.provider = handle;
+  ctx.flushPendingShort = flushPendingShort;
 }
 
 function startTrialTimer(

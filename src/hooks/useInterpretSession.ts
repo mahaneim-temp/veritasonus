@@ -138,6 +138,11 @@ export function useInterpretSession(opts: Options) {
         case "state":
           setState(ev.state);
           return;
+        case "speech_partial":
+          // 실시간성 체감 개선: STT interim 결과를 즉시 표시.
+          // speech_final 이 뒤따라 와서 같은 seq 를 덮어쓴다.
+          setItems((prev) => upsert(prev, ev.seq, { source_text: ev.text }));
+          return;
         case "speech_final":
           setItems((prev) => upsert(prev, ev.seq, { source_text: ev.text }));
           return;
