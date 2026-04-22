@@ -36,6 +36,7 @@ export type SessionState =
   | "prepared"
   | "live"
   | "paused"
+  | "reconnecting"
   | "ended"
   | "post_reconstructing"
   | "completed";

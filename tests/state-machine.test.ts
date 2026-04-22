@@ -13,6 +13,7 @@ const baseCtx: Context = {
   utterancesCount: 0,
   recordingEnabled: false,
   topicDiscoveryActive: false,
+  reconnectReturnTo: null,
 };
 
 describe("session state-machine", () => {
@@ -111,5 +112,69 @@ describe("session state-machine", () => {
     const r = transition("idle", { type: "pause" }, baseCtx);
     expect(r.state).toBe("idle");
     expect(r.effects[0]?.type).toBe("log");
+  });
+
+  // ── A-4 재연결 전이 ─────────────────────────────────────
+  it("live + ws_disconnected → reconnecting with ws_reconnect effect", () => {
+    const r = transition(
+      "live",
+      { type: "ws_disconnected", wasPaused: false },
+      baseCtx,
+    );
+    expect(r.state).toBe("reconnecting");
+    expect(r.effects[0]?.type).toBe("ws_reconnect");
+    expect((r.effects[0]?.payload as any).returnTo).toBe("live");
+  });
+
+  it("paused + ws_disconnected → reconnecting returning to paused", () => {
+    const r = transition(
+      "paused",
+      { type: "ws_disconnected", wasPaused: true },
+      baseCtx,
+    );
+    expect(r.state).toBe("reconnecting");
+    expect((r.effects[0]?.payload as any).returnTo).toBe("paused");
+  });
+
+  it("reconnecting + ws_reconnected → returns to prior state from ctx", () => {
+    const r = transition(
+      "reconnecting",
+      { type: "ws_reconnected" },
+      { ...baseCtx, reconnectReturnTo: "paused" },
+    );
+    expect(r.state).toBe("paused");
+  });
+
+  it("reconnecting + ws_reconnected defaults to live when ctx is null", () => {
+    const r = transition(
+      "reconnecting",
+      { type: "ws_reconnected" },
+      baseCtx,
+    );
+    expect(r.state).toBe("live");
+  });
+
+  it("reconnecting + reconnect_gave_up → ended with warning + ws_close", () => {
+    const r = transition(
+      "reconnecting",
+      { type: "reconnect_gave_up" },
+      baseCtx,
+    );
+    expect(r.state).toBe("ended");
+    expect(r.effects.map((e) => e.type)).toEqual([
+      "show_warning",
+      "ws_close",
+    ]);
+    expect((r.effects[0]?.payload as any).reason).toBe("network_lost");
+  });
+
+  it("reconnecting + end (user) → ended cleanly", () => {
+    const r = transition(
+      "reconnecting",
+      { type: "end", reason: "user" },
+      baseCtx,
+    );
+    expect(r.state).toBe("ended");
+    expect(r.effects[0]?.type).toBe("ws_close");
   });
 });

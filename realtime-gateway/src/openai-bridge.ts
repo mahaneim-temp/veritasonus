@@ -136,6 +136,47 @@ export async function handleConnection(
           session: msg["session"] ?? {},
         });
         break;
+      case "heartbeat.ping": {
+        // A-4: 클라 RTT 측정용. 받은 t 를 그대로 돌려준다.
+        const t = typeof msg["t"] === "number" ? (msg["t"] as number) : Date.now();
+        try {
+          ws.send(JSON.stringify({ type: "heartbeat.pong", t }));
+        } catch {
+          // ignore
+        }
+        break;
+      }
+      case "auth.refresh": {
+        // A-4: 만료 5분 전 클라가 재발급된 JWT 를 보내면 재검증 후 OK.
+        const token = typeof msg["token"] === "string" ? (msg["token"] as string) : "";
+        if (!token) {
+          log.warn("auth_refresh_missing_token");
+          break;
+        }
+        try {
+          const claims = await verifyToken(token);
+          // 같은 세션인지 확인.
+          if (claims.session_id !== ctx.claims.session_id) {
+            log.warn(
+              { expected: ctx.claims.session_id, got: claims.session_id },
+              "auth_refresh_session_mismatch",
+            );
+            break;
+          }
+          ctx.claims = claims;
+          ws.send(JSON.stringify({ type: "auth.refreshed" }));
+          log.info({ session: claims.session_id }, "auth_refreshed");
+        } catch (e) {
+          log.warn({ err: String(e) }, "auth_refresh_failed");
+          // 토큰 갱신 실패는 치명적. 연결을 끊어 클라 재연결 루틴에 위임.
+          try {
+            ws.close(4003, "auth_refresh_failed");
+          } catch {
+            // ignore
+          }
+        }
+        break;
+      }
       case "control.commit":
         sendUpstream(ctx, { type: "input_audio_buffer.commit" });
         sendUpstream(ctx, { type: "response.create" });

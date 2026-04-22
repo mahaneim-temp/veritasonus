@@ -13,6 +13,8 @@ import type {
 export type ServerEvent =
   | { type: "session_ready"; session_id: string; gateway_version: string }
   | { type: "state"; state: SessionState }
+  | { type: "heartbeat.pong"; t: number }
+  | { type: "auth.refreshed" }
   | {
       type: "network_warning";
       severity: "warn" | "error";
@@ -68,6 +70,8 @@ export type ServerEvent =
 // ── Client → Server ──────────────────────────────────────────
 export type ClientEvent =
   | { type: "auth.hello"; token: string }
+  | { type: "auth.refresh"; token: string }
+  | { type: "heartbeat.ping"; t: number }
   | {
       type: "client.command";
       command: "pause" | "resume" | "end" | "manual_clarify";

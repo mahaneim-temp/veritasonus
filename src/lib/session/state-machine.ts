@@ -16,6 +16,9 @@ export type SessionEvent =
   | { type: "pause" }
   | { type: "resume" }
   | { type: "end"; reason?: "user" | "trial" | "network" | "error" }
+  | { type: "ws_disconnected"; wasPaused: boolean }
+  | { type: "ws_reconnected" }
+  | { type: "reconnect_gave_up" }
   | { type: "request_reconstruct" }
   | { type: "reconstruct_done" }
   | { type: "reconstruct_failed" }
@@ -26,6 +29,7 @@ export interface Effect {
   type:
     | "ws_open"
     | "ws_close"
+    | "ws_reconnect"
     | "schedule_reconstruct"
     | "show_warning"
     | "log";
@@ -40,6 +44,8 @@ export interface Context {
   utterancesCount: number;
   recordingEnabled: boolean;
   topicDiscoveryActive: boolean; // listener 모드에서만 true
+  /** 재연결 중 "복구해야 할 원 상태". live 에서 끊겼으면 live, paused 에서 끊겼으면 paused. */
+  reconnectReturnTo: "live" | "paused" | null;
 }
 
 export interface TransitionResult {
@@ -113,6 +119,14 @@ export function transition(
 
     case "live":
       if (event.type === "pause") return { state: "paused", effects: [] };
+      if (event.type === "ws_disconnected") {
+        return {
+          state: "reconnecting",
+          effects: [
+            { type: "ws_reconnect", payload: { returnTo: "live" } },
+          ],
+        };
+      }
       if (event.type === "end")
         return {
           state: "ended",
@@ -122,12 +136,41 @@ export function transition(
 
     case "paused":
       if (event.type === "resume") return { state: "live", effects: [] };
+      if (event.type === "ws_disconnected") {
+        return {
+          state: "reconnecting",
+          effects: [
+            { type: "ws_reconnect", payload: { returnTo: "paused" } },
+          ],
+        };
+      }
       if (event.type === "end")
         return {
           state: "ended",
           effects: [{ type: "ws_close", payload: { reason: event.reason } }],
         };
       return noop("invalid_in_paused");
+
+    case "reconnecting":
+      if (event.type === "ws_reconnected") {
+        const back = ctx.reconnectReturnTo ?? "live";
+        return { state: back, effects: [] };
+      }
+      if (event.type === "reconnect_gave_up") {
+        return {
+          state: "ended",
+          effects: [
+            { type: "show_warning", payload: { reason: "network_lost" } },
+            { type: "ws_close", payload: { reason: "network" } },
+          ],
+        };
+      }
+      if (event.type === "end")
+        return {
+          state: "ended",
+          effects: [{ type: "ws_close", payload: { reason: event.reason } }],
+        };
+      return noop("invalid_in_reconnecting");
 
     case "ended": {
       if (event.type === "request_reconstruct") {
