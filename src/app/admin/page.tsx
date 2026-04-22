@@ -6,6 +6,8 @@ import {
   BarChart3,
   FileSearch,
   ArrowRight,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -125,9 +127,25 @@ async function loadOverview() {
   };
 }
 
+function budgetBannerTone(ratio: number): {
+  tone: "info" | "warning" | "danger";
+  label: string;
+} {
+  if (ratio >= 1) return { tone: "danger", label: "예산 초과" };
+  if (ratio >= 0.8) return { tone: "warning", label: "예산 임계 (80%)" };
+  if (ratio >= 0.5) return { tone: "info", label: "예산 50% 도달" };
+  return { tone: "info", label: "정상" };
+}
+
 export default async function AdminDashboardPage() {
   await requireAdmin();
   const ov = await loadOverview();
+
+  const budgetKrw = Number(process.env.BUDGET_MONTHLY_KRW ?? 0);
+  const showBudget = budgetKrw > 0;
+  const ratio = showBudget ? ov.thisMonth.estimatedCostKrw / budgetKrw : 0;
+  const bannerState = budgetBannerTone(ratio);
+  const showBanner = showBudget && ratio >= 0.5;
 
   return (
     <div className="container max-w-6xl py-10 space-y-10">
@@ -137,6 +155,40 @@ export default async function AdminDashboardPage() {
           {ov.thisMonth.yyyymm} · KST 기준 · 원가는 가정 단가 기반 추정치
         </p>
       </header>
+
+      {showBanner && (
+        <div
+          className={
+            "flex items-start gap-2 rounded-xl border px-4 py-3 text-sm " +
+            (bannerState.tone === "danger"
+              ? "border-danger/40 bg-danger/5 text-danger"
+              : bannerState.tone === "warning"
+              ? "border-warning/40 bg-warning/5 text-warning"
+              : "border-primary/30 bg-primary/5 text-primary")
+          }
+        >
+          {bannerState.tone === "danger" ? (
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
+          <div className="flex-1">
+            <p className="font-medium">{bannerState.label}</p>
+            <p className="mt-0.5 text-xs text-ink-secondary">
+              이번 달 추정 원가{" "}
+              <strong className="text-ink-primary tabular-nums">
+                ₩{Math.round(ov.thisMonth.estimatedCostKrw).toLocaleString()}
+              </strong>{" "}
+              / 설정 예산{" "}
+              <strong className="text-ink-primary tabular-nums">
+                ₩{budgetKrw.toLocaleString()}
+              </strong>{" "}
+              ({Math.round(ratio * 100)}%). 가정 단가 기반이므로 실제 GCP
+              Billing 의 예산 경고와 별도로 관리하세요.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Today / realtime KPI */}
       <section>
