@@ -28,6 +28,7 @@ import { ENV } from "./env.js";
 import { verifyToken, type RealtimeClaims } from "./auth.js";
 import { decrement } from "./trial.js";
 import {
+  finalizeSessionUsage,
   markSessionState,
   updateUtteranceTranslation,
   writeUtterance,
@@ -47,6 +48,10 @@ interface SessionCtx {
   pendingTranscript: string;
   trialTimer: NodeJS.Timeout | null;
   audioInFlight: boolean;
+  /** 세션이 live 로 전환된 시각(ms). usage 누적용. */
+  liveStartedAtMs: number | null;
+  /** usage 누적을 2번 호출하지 않기 위한 flag. */
+  usageFinalized: boolean;
 }
 
 export async function handleConnection(
@@ -95,6 +100,8 @@ export async function handleConnection(
           pendingTranscript: "",
           trialTimer: null,
           audioInFlight: false,
+          liveStartedAtMs: Date.now(),
+          usageFinalized: false,
         };
         log.info(
           { session: claims.session_id, owner: claims.owner_type },
@@ -196,6 +203,7 @@ export async function handleConnection(
         break;
       }
       case "control.end":
+        await finalizeUsageIfNeeded(ctx, log);
         await markSessionState(ctx.claims.session_id, "ended");
         ws.close(1000, "ended");
         break;
@@ -220,6 +228,8 @@ export async function handleConnection(
         { code, reason: reason.toString(), session: ctx.claims.session_id },
         "client_closed",
       );
+      // F-1: 비정상 종료(재연결 등)에서도 usage 누적 누수되지 않게 한 번은 반드시 반영.
+      await finalizeUsageIfNeeded(ctx, log);
     } else {
       log.info({ code, reason: reason.toString() }, "client_closed_pre_auth");
     }
@@ -382,6 +392,33 @@ async function handleUpstreamEvent(
       }
       return;
     }
+  }
+}
+
+async function finalizeUsageIfNeeded(
+  ctx: SessionCtx,
+  log: PinoLogger,
+): Promise<void> {
+  if (ctx.usageFinalized) return;
+  ctx.usageFinalized = true;
+  if (!ctx.liveStartedAtMs) return;
+  const elapsedSec = Math.max(
+    0,
+    Math.floor((Date.now() - ctx.liveStartedAtMs) / 1000),
+  );
+  if (elapsedSec === 0) return;
+  try {
+    await finalizeSessionUsage(
+      ctx.claims.session_id,
+      ctx.claims.owner_type === "member" ? "member" : "guest",
+      ctx.claims.sub,
+      elapsedSec,
+    );
+  } catch (e) {
+    log.warn(
+      { err: String(e), session: ctx.claims.session_id },
+      "finalize_usage_failed",
+    );
   }
 }
 

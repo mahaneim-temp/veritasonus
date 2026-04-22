@@ -349,6 +349,61 @@ export interface Database {
         };
         Relationships: [];
       };
+      consent_logs: {
+        Row: {
+          id: string;
+          actor_type: string;
+          actor_id: string;
+          session_id: string | null;
+          kind: string;
+          version: string | null;
+          ip_hash: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          actor_type: string;
+          actor_id: string;
+          session_id?: string | null;
+          kind: string;
+          version?: string | null;
+          ip_hash?: string | null;
+          user_agent?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          actor_type?: string;
+          actor_id?: string;
+          session_id?: string | null;
+          kind?: string;
+          version?: string | null;
+          ip_hash?: string | null;
+          user_agent?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      usage_monthly: {
+        Row: {
+          user_id: string;
+          yyyymm: string;
+          seconds_used: number;
+          last_warned_at: string | null;
+        };
+        Insert: {
+          user_id: string;
+          yyyymm: string;
+          seconds_used?: number;
+          last_warned_at?: string | null;
+        };
+        Update: {
+          seconds_used?: number;
+          last_warned_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {

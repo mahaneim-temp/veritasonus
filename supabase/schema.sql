@@ -185,6 +185,30 @@ create table if not exists public.quality_events (
 );
 create index if not exists quality_events_session on public.quality_events(session_id, created_at desc);
 
+-- C-1 PIPA: 가입 약관 · 리스너 상대방 동의 등 모든 법적 동의 이력을 단일 테이블에 기록.
+-- actor_type='member'|'guest' + actor_id 로 회원/게스트 구분.
+create table if not exists public.consent_logs (
+  id uuid primary key default gen_random_uuid(),
+  actor_type text not null,           -- member | guest
+  actor_id uuid not null,             -- users.id 또는 guest_sessions.id
+  session_id uuid references public.sessions(id) on delete set null,
+  kind text not null,                 -- terms_of_service | privacy_policy | listener_third_party | marketing
+  version text,                       -- 동의한 문서 버전 (예: "2026-04-22")
+  ip_hash text,                       -- 증거 보존용 pseudonym
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+create index if not exists consent_logs_actor on public.consent_logs(actor_type, actor_id, created_at desc);
+
+-- F-1 사용량 쿼터: 월별 누적 초 수. KST(Asia/Seoul) yyyymm 키.
+create table if not exists public.usage_monthly (
+  user_id uuid not null references public.users(id) on delete cascade,
+  yyyymm text not null,                         -- '202604'
+  seconds_used bigint not null default 0,
+  last_warned_at timestamptz,                   -- 80% 경고 이메일 1회 트리거 guard
+  primary key (user_id, yyyymm)
+);
+
 -- ── new-user trigger (auth.users → public.users 동기화) ──────
 create or replace function public.handle_new_user()
 returns trigger

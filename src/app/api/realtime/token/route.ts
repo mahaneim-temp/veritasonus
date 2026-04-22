@@ -24,6 +24,7 @@ import {
   DEFAULT_TRIAL_SECONDS,
 } from "@/lib/guest/trial";
 import { getLimiter, rateLimit } from "@/lib/ratelimit";
+import { checkQuotaForUser } from "@/lib/billing/quota";
 import { logger } from "@/lib/utils/logger";
 import type { RealtimeTokenResponse } from "@/types/api";
 
@@ -111,6 +112,27 @@ export async function POST(req: NextRequest) {
           error: {
             code: "trial_expired",
             message: "체험이 끝났습니다. 회원 가입으로 이어가세요.",
+          },
+        },
+        { status: 402 },
+      );
+    }
+  }
+
+  // F-1 쿼터: 회원 세션이면 월 한도 확인. 초과 시 토큰 미발급.
+  if (r.owner_type === "member" && user) {
+    const evalResult = await checkQuotaForUser(supabaseService(), user.id);
+    if (evalResult.status === "limit_reached") {
+      return NextResponse.json(
+        {
+          error: {
+            code: "quota_exceeded",
+            message:
+              "이번 달 사용 시간을 모두 소진하셨습니다. 다음 달에 초기화되거나 플랜 업그레이드 후 이용 가능합니다.",
+            details: {
+              used_seconds: evalResult.usedSeconds,
+              limit_seconds: evalResult.limitSeconds,
+            },
           },
         },
         { status: 402 },

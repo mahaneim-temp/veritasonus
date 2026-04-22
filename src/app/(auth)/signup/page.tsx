@@ -1,32 +1,60 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabaseClient } from "@/lib/supabase/client";
 
+const LEGAL_VERSION = "2026-04-22";
+
 export default function SignupPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [agreePrivacy, setAgreePrivacy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!agreeTerms || !agreePrivacy) {
+      setError("이용약관과 개인정보 처리방침에 모두 동의해주세요.");
+      return;
+    }
     setBusy(true);
     setError(null);
-    const { error } = await supabaseClient().auth.signUp({
+    const { data, error } = await supabaseClient().auth.signUp({
       email,
       password,
       options: { data: { locale: "ko" } },
     });
-    setBusy(false);
     if (error) {
+      setBusy(false);
       setError(error.message);
       return;
     }
+    // 가입 직후 consent_logs 에 동의 이력 기록 (서버 side 엔드포인트 사용).
+    try {
+      const userId = data.user?.id;
+      if (userId) {
+        await fetch("/api/account/consent", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            kinds: ["terms_of_service", "privacy_policy"],
+            version: LEGAL_VERSION,
+          }),
+        });
+      }
+    } catch {
+      // 비동기 best-effort. 실패해도 가입 자체는 완료.
+    }
+    setBusy(false);
     router.push("/");
   }
 
@@ -60,8 +88,54 @@ export default function SignupPage() {
             autoComplete="new-password"
           />
         </label>
+
+        <div className="space-y-2 pt-2">
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={agreeTerms}
+              onChange={(e) => setAgreeTerms(e.target.checked)}
+              className="mt-0.5"
+              required
+            />
+            <span>
+              <Link
+                href="/legal/terms"
+                target="_blank"
+                className="underline"
+              >
+                이용약관
+              </Link>
+              에 동의합니다. (필수)
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={agreePrivacy}
+              onChange={(e) => setAgreePrivacy(e.target.checked)}
+              className="mt-0.5"
+              required
+            />
+            <span>
+              <Link
+                href="/legal/privacy"
+                target="_blank"
+                className="underline"
+              >
+                개인정보 처리방침
+              </Link>
+              에 동의합니다. (필수)
+            </span>
+          </label>
+        </div>
+
         {error && <p className="text-sm text-danger">{error}</p>}
-        <Button type="submit" className="w-full" disabled={busy}>
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={busy || !agreeTerms || !agreePrivacy}
+        >
           {busy ? "가입 중…" : "가입하기"}
         </Button>
       </form>

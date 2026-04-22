@@ -159,6 +159,25 @@ export interface Database {
         };
         Relationships: [];
       };
+      usage_monthly: {
+        Row: {
+          user_id: string;
+          yyyymm: string;
+          seconds_used: number;
+          last_warned_at: string | null;
+        };
+        Insert: {
+          user_id: string;
+          yyyymm: string;
+          seconds_used?: number;
+          last_warned_at?: string | null;
+        };
+        Update: {
+          seconds_used?: number;
+          last_warned_at?: string | null;
+        };
+        Relationships: [];
+      };
       reconstructions: {
         Row: {
           id: string;

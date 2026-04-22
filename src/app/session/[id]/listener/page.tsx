@@ -6,7 +6,10 @@ import { LiveTranscript } from "@/components/session/LiveTranscript";
 import { ControlBar } from "@/components/session/ControlBar";
 import { ListenerSourcePicker } from "@/components/session/ListenerSourcePicker";
 import { Badge } from "@/components/ui/badge";
+import { ListenerConsentModal } from "@/components/listener/ConsentModal";
 import { useInterpretSession } from "@/hooks/useInterpretSession";
+
+const LEGAL_VERSION = "2026-04-22";
 
 export default function ListenerPage({
   params,
@@ -16,6 +19,7 @@ export default function ListenerPage({
   const { id } = use(params);
   const [source, setSource] = useState<"mic" | "tab_audio">("mic");
   const [started, setStarted] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
 
   const session = useInterpretSession({
     sessionId: id,
@@ -23,6 +27,27 @@ export default function ListenerPage({
     qualityMode: "auto",
     audioSource: source,
   });
+
+  async function logConsentAndStart() {
+    // 상대방 동의 자기 확인을 consent_logs 에 기록한 뒤 세션 시작.
+    try {
+      await fetch("/api/account/consent", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kinds: ["listener_third_party"],
+          version: LEGAL_VERSION,
+          session_id: id,
+        }),
+      });
+    } catch {
+      // best-effort — 기록 실패가 세션 시작을 막지는 않음.
+    }
+    setConsentOpen(false);
+    setStarted(true);
+    await session.start();
+  }
 
   if (!started) {
     return (
@@ -36,14 +61,17 @@ export default function ListenerPage({
         <div className="flex justify-end">
           <button
             className="inline-flex h-11 items-center justify-center rounded-xl bg-primary px-5 text-sm font-medium text-primary-fg hover:bg-primary-hover"
-            onClick={async () => {
-              setStarted(true);
-              await session.start();
-            }}
+            onClick={() => setConsentOpen(true)}
           >
             청취 시작
           </button>
         </div>
+        <ListenerConsentModal
+          open={consentOpen}
+          recordingEnabled={false}
+          onConfirm={logConsentAndStart}
+          onCancel={() => setConsentOpen(false)}
+        />
       </div>
     );
   }

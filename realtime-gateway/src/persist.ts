@@ -7,6 +7,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { ENV } from "./env.js";
 import { logger } from "./logger.js";
 import type { Database } from "./db-types.js";
+import { addSessionUsage } from "./usage.js";
 
 let _sb: SupabaseClient<Database> | null = null;
 function sb(): SupabaseClient<Database> {
@@ -65,6 +66,18 @@ export async function updateUtteranceTranslation(
 }
 
 type SessionUpdate = Database["public"]["Tables"]["sessions"]["Update"];
+
+/**
+ * F-1: 세션 종료 시 usage_monthly 누적. openai-bridge 가 control.end / ws close 양 경로에서 호출.
+ */
+export async function finalizeSessionUsage(
+  _sessionId: string,
+  ownerType: "member" | "guest",
+  ownerId: string,
+  elapsedSeconds: number,
+): Promise<void> {
+  await addSessionUsage(sb(), ownerType, ownerId, elapsedSeconds);
+}
 
 export async function markSessionState(
   sessionId: string,
