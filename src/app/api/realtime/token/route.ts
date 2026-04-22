@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   const { data: srow } = await supabaseService()
     .from("sessions")
-    .select("owner_type,owner_id,state")
+    .select("owner_type,owner_id,state,source_lang,target_lang")
     .eq("id", parsed.data.session_id)
     .maybeSingle();
   if (!srow) {
@@ -150,6 +150,8 @@ export async function POST(req: NextRequest) {
         trial_remaining_s: Number.isFinite(trialRemaining)
           ? Math.floor(trialRemaining)
           : 24 * 3600,
+        source_lang: String(r.source_lang ?? "ko"),
+        target_lang: String(r.target_lang ?? "en"),
       },
       Number(process.env.REALTIME_TOKEN_TTL_S ?? 900),
     );

@@ -11,6 +11,10 @@ export interface RealtimeClaims {
   owner_type: "guest" | "member";
   session_id: string;
   trial_remaining_s: number;
+  /** STT 입력 언어. session_handler 가 Provider 에 전달. */
+  source_lang: string;
+  /** 번역 출력 언어. */
+  target_lang: string;
   iat: number;
   exp: number;
 }

@@ -69,7 +69,12 @@ export default function PreparedStartPage() {
       alert(json?.error?.message ?? "세션 생성 실패");
       return;
     }
-    router.push(`/session/${json.session_id}?from=prepared`);
+    // mode 따라 전용 페이지로. listener 계열은 listener route, 그 외는 기본 route.
+    const isListener = state.mode.startsWith("listener_");
+    const dest = isListener
+      ? `/session/${json.session_id}/listener`
+      : `/session/${json.session_id}?from=prepared`;
+    router.push(dest as never);
   }
 
   return (

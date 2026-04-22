@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowRightLeft, Zap } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowRightLeft, Ear, HandHelping, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -31,14 +31,66 @@ const LANGS = [
   { code: "zh", label: "中文" },
 ];
 
+const ALLOWED_MODES: readonly SessionMode[] = [
+  "interactive_interpretation",
+  "listener_live",
+  "listener_live_recorded",
+  "assist_interpretation",
+];
+
+function modeFromQuery(raw: string | null): SessionMode {
+  if (raw && (ALLOWED_MODES as readonly string[]).includes(raw)) {
+    return raw as SessionMode;
+  }
+  return "interactive_interpretation";
+}
+
+function modeLabel(mode: SessionMode): {
+  title: string;
+  sub: string;
+  icon: typeof Zap;
+} {
+  if (mode === "listener_live" || mode === "listener_live_recorded") {
+    return {
+      title: "청취 모드",
+      sub: "현장 발화를 받아 실시간으로 번역만 제공합니다.",
+      icon: Ear,
+    };
+  }
+  if (mode === "assist_interpretation") {
+    return {
+      title: "통역 어시스트",
+      sub: "직접 말하려는데 막힐 때 단어·표현을 제안합니다.",
+      icon: HandHelping,
+    };
+  }
+  return {
+    title: "빠른 시작",
+    sub: "언어쌍과 품질 모드만 선택하고 즉시 시작합니다.",
+    icon: Zap,
+  };
+}
+
 export default function QuickStartPage() {
   const router = useRouter();
-  const [source, setSource] = useState("ko");
-  const [target, setTarget] = useState("en");
+  const searchParams = useSearchParams();
+  // URL 의 ?mode 를 첫 렌더에 한 번 읽고 고정. 변경하고 싶으면 다른 세션 start 화면으로 재진입.
+  const [mode] = useState<SessionMode>(() =>
+    modeFromQuery(searchParams.get("mode")),
+  );
+  // listener 모드 기본값은 "영어 입력 → 한국어 자막" — 한국 사용자가 청취하는 가장 흔한 케이스.
+  const [source, setSource] = useState(() =>
+    mode.startsWith("listener_") ? "en" : "ko",
+  );
+  const [target, setTarget] = useState(() =>
+    mode.startsWith("listener_") ? "ko" : "en",
+  );
   const [quality, setQuality] = useState<QualityMode>("auto");
-  const [mode] = useState<SessionMode>("interactive_interpretation");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const header = modeLabel(mode);
+  const HeaderIcon = header.icon;
+  const isListener = mode.startsWith("listener_");
 
   function swap() {
     setSource(target);
@@ -80,7 +132,11 @@ export default function QuickStartPage() {
       };
       if (!created.ok) throw new Error((json as any).error?.message);
       const sid = (json as CreateSessionResponse).session_id;
-      router.push(`/session/${sid}`);
+      // 모드에 따라 전용 페이지로. typedRoutes 가 동적 문자열을 허용 안 해서 as never 로 단언.
+      const dest = isListener
+        ? `/session/${sid}/listener`
+        : `/session/${sid}`;
+      router.push(dest as never);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "error");
     } finally {
@@ -90,21 +146,24 @@ export default function QuickStartPage() {
 
   return (
     <div className="container max-w-3xl py-10 md:py-16">
-      <h1 className="text-3xl font-semibold tracking-tight">빠른 시작</h1>
-      <p className="mt-2 text-ink-secondary">
-        언어쌍과 품질 모드만 선택하고 즉시 시작합니다.
-      </p>
+      <div className="flex items-center gap-2 text-ink-primary">
+        <HeaderIcon className="h-5 w-5 text-primary" />
+        <h1 className="text-3xl font-semibold tracking-tight">{header.title}</h1>
+      </div>
+      <p className="mt-2 text-ink-secondary">{header.sub}</p>
 
       <Card className="mt-8">
         <CardHeader>
           <CardTitle>언어쌍</CardTitle>
           <CardDescription>
-            음성이 들어오는 언어와, 번역이 나올 언어를 선택하세요.
+            {isListener
+              ? "듣고자 하는 발화의 언어(입력)와, 자막으로 보고 싶은 언어(출력)를 선택하세요."
+              : "음성이 들어오는 언어와, 번역이 나올 언어를 선택하세요."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex items-end gap-3">
           <LangPicker
-            label="입력"
+            label={isListener ? "듣는 언어 (입력)" : "입력"}
             value={source}
             onChange={setSource}
           />
@@ -118,7 +177,7 @@ export default function QuickStartPage() {
             <ArrowRightLeft className="h-4 w-4" />
           </Button>
           <LangPicker
-            label="출력"
+            label={isListener ? "자막 언어 (출력)" : "출력"}
             value={target}
             onChange={setTarget}
           />

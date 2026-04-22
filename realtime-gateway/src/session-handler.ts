@@ -90,15 +90,16 @@ function flushPendingShortOnCtx(ctx: SessionCtx): void {
   }
 }
 
-// 로컬 dev 편의를 위해 import 해두되, 실제 언어는 sessions row 에서 읽어와야 정확.
-// v1 은 env/기본값으로 간단히 처리 (ko↔en).
-function langsFromClaims(_claims: RealtimeClaims): {
+function langsFromClaims(claims: RealtimeClaims): {
   source: string;
   target: string;
 } {
-  // 클레임에 담아주는 게 이상적이지만 현재 RealtimeClaims 에 없으므로 기본값.
-  // Provider 선택은 세션 수준에서만 중요. 언어쌍은 sessions 테이블에 있는 값이 최종 기준.
-  return { source: "ko", target: "en" };
+  // /api/realtime/token 이 sessions.source_lang / target_lang 을 JWT 에 직접 박아준다.
+  // 레거시 토큰(필드 없음) 하위호환을 위해 기본값은 유지.
+  return {
+    source: claims.source_lang || "ko",
+    target: claims.target_lang || "en",
+  };
 }
 
 export async function handleConnection(

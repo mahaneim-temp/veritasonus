@@ -11,6 +11,10 @@ export interface RealtimeClaims {
   owner_type: "guest" | "member";
   session_id: string;
   trial_remaining_s: number;
+  /** STT 입력 언어 (ISO/BCP-47: "en", "ko" 등). gateway Provider 가 STT 구성에 사용. */
+  source_lang: string;
+  /** 번역 출력 언어. */
+  target_lang: string;
   iat: number;
   exp: number;
 }
