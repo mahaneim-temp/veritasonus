@@ -40,4 +40,8 @@ export const ENV = {
   TRIAL_DECREMENT_INTERVAL_MS: Number(
     process.env.TRIAL_DECREMENT_INTERVAL_MS ?? 5000,
   ),
+  PARSER_POLL_INTERVAL_MS: Number(
+    process.env.PARSER_POLL_INTERVAL_MS ?? 5000,
+  ),
+  PARSER_STORAGE_BUCKET: process.env.PARSER_STORAGE_BUCKET ?? "uploads",
 };

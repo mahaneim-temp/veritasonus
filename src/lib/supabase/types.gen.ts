@@ -144,6 +144,8 @@ export interface Database {
           size_bytes: number | null;
           extracted_text: string | null;
           parse_status: string;
+          parse_error: string | null;
+          parsed_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -156,6 +158,8 @@ export interface Database {
           size_bytes?: number | null;
           extracted_text?: string | null;
           parse_status?: string;
+          parse_error?: string | null;
+          parsed_at?: string | null;
           created_at?: string;
         };
         Update: {
@@ -168,6 +172,8 @@ export interface Database {
           size_bytes?: number | null;
           extracted_text?: string | null;
           parse_status?: string;
+          parse_error?: string | null;
+          parsed_at?: string | null;
           created_at?: string;
         };
         Relationships: [];

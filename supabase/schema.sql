@@ -109,10 +109,14 @@ create table if not exists public.session_assets (
   mime_type text,
   size_bytes int,
   extracted_text text,
-  parse_status text not null default 'pending',
+  parse_status text not null default 'pending',   -- pending|running|done|failed
+  parse_error text,
+  parsed_at timestamptz,
   created_at timestamptz not null default now()
 );
 create index if not exists assets_session_idx on public.session_assets(session_id);
+-- 파싱 워커가 pending 행을 빠르게 집어올 수 있도록.
+create index if not exists assets_parse_status_idx on public.session_assets(parse_status, created_at);
 
 create table if not exists public.utterances (
   id uuid primary key default gen_random_uuid(),

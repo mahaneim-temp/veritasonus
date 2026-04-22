@@ -17,6 +17,7 @@ import Fastify from "fastify";
 import { WebSocketServer } from "ws";
 import { logger } from "./logger.js";
 import { handleConnection } from "./openai-bridge.js";
+import { startParserWorker } from "./parser-worker.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -61,8 +62,12 @@ app
     process.exit(1);
   });
 
+// 자료 파싱 워커 (A-2) — 같은 프로세스 내 setInterval 폴링.
+const parserWorker = startParserWorker();
+
 const shutdown = (signal: string) => {
   logger.info({ signal }, "shutdown");
+  parserWorker.stop();
   wss.clients.forEach((c) => {
     try {
       c.close(1001, "server shutdown");

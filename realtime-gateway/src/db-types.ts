@@ -117,6 +117,48 @@ export interface Database {
         };
         Relationships: [];
       };
+      session_assets: {
+        Row: {
+          id: string;
+          session_id: string;
+          asset_type:
+            | "script"
+            | "slides"
+            | "glossary"
+            | "sermon_note"
+            | "speaker_profile";
+          file_name: string | null;
+          file_path: string | null;
+          mime_type: string | null;
+          size_bytes: number | null;
+          extracted_text: string | null;
+          parse_status: string;
+          parse_error: string | null;
+          parsed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          session_id: string;
+          asset_type: Database["public"]["Tables"]["session_assets"]["Row"]["asset_type"];
+          file_name?: string | null;
+          file_path?: string | null;
+          mime_type?: string | null;
+          size_bytes?: number | null;
+          extracted_text?: string | null;
+          parse_status?: string;
+          parse_error?: string | null;
+          parsed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          extracted_text?: string | null;
+          parse_status?: string;
+          parse_error?: string | null;
+          parsed_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {};
