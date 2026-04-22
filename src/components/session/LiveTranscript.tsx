@@ -12,10 +12,13 @@ export function LiveTranscript({
   items,
   onClarify,
   showCorrected,
+  emptyHint,
 }: {
   items: U[];
   onClarify?: (seq: number) => void;
   showCorrected?: boolean;
+  /** items 가 비었을 때 가운데 표시할 안내 문구. 전달 안 하면 기본값. */
+  emptyHint?: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
@@ -79,8 +82,8 @@ export function LiveTranscript({
 
   if (items.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">
-        음성이 감지되면 여기에 표시됩니다.
+      <div className="flex-1 flex items-center justify-center text-ink-muted text-sm px-4 text-center">
+        {emptyHint ?? "음성이 감지되면 여기에 표시됩니다."}
       </div>
     );
   }

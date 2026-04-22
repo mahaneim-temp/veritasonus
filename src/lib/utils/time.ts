@@ -1,7 +1,14 @@
-export function formatDurationSec(totalSec: number): string {
-  const s = Math.max(0, Math.floor(totalSec));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
+/**
+ * 초 단위 숫자를 `M:SS` 로 포맷. NaN/undefined/Infinity 같은 비정상 값이 들어와도
+ * "NaN:NaN" 같은 깨진 출력 대신 `0:00` 반환.
+ */
+export function formatDurationSec(totalSec: unknown): string {
+  const n =
+    typeof totalSec === "number" && Number.isFinite(totalSec)
+      ? Math.max(0, Math.floor(totalSec))
+      : 0;
+  const m = Math.floor(n / 60);
+  const r = n % 60;
   return `${m}:${String(r).padStart(2, "0")}`;
 }
 

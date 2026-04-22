@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Mic, Monitor, AlertCircle, Loader2, Ear } from "lucide-react";
 import { NetworkStatus } from "@/components/shell/NetworkStatus";
 import { LiveTranscript } from "@/components/session/LiveTranscript";
 import { ControlBar } from "@/components/session/ControlBar";
@@ -18,6 +19,37 @@ import {
 import { formatDurationSec } from "@/lib/utils/time";
 
 const LEGAL_VERSION = "2026-04-22";
+
+/** 현재 session.state 를 한국어 뱃지 라벨로 변환. */
+function stateLabel(state: string): string {
+  switch (state) {
+    case "live":
+      return "청취 중";
+    case "paused":
+      return "일시정지";
+    case "reconnecting":
+      return "재연결 중";
+    case "ended":
+      return "종료됨";
+    case "completed":
+      return "완료";
+    case "preflight":
+    case "idle":
+      return "연결 중…";
+    default:
+      return state.toUpperCase();
+  }
+}
+
+function stateTone(
+  state: string,
+): "danger" | "info" | "warning" | "neutral" {
+  if (state === "live") return "info"; // 청취 중이라 danger(빨강)보다 info(파랑)가 자연스러움
+  if (state === "paused") return "warning";
+  if (state === "reconnecting") return "warning";
+  if (state === "ended" || state === "completed") return "neutral";
+  return "neutral";
+}
 
 export default function ListenerPage({
   params,
@@ -69,10 +101,14 @@ export default function ListenerPage({
     await session.start();
   }
 
+  // ── pre-start 화면 ──────────────────────────────────────────
   if (!started) {
     return (
       <div className="container max-w-2xl py-10 space-y-5">
-        <h1 className="text-2xl font-semibold">청취 시작</h1>
+        <div className="flex items-center gap-2">
+          <Ear className="h-5 w-5 text-primary" />
+          <h1 className="text-2xl font-semibold">청취 시작</h1>
+        </div>
         <p className="text-ink-secondary">
           현장 음성을 받아 실시간으로 번역합니다. 화자에게 재질문할 수 없는
           상황이므로, 신뢰도 낮은 구간은 <strong>검토 권장</strong>으로 표시됩니다.
@@ -96,12 +132,55 @@ export default function ListenerPage({
     );
   }
 
+  // ── running 화면 ────────────────────────────────────────────
+  const isLive = session.state === "live";
+  const isActiveOrWaiting =
+    session.state === "live" || session.state === "paused";
+  const hasItems = session.items.length > 0;
+  const sourceIcon = source === "tab_audio" ? Monitor : Mic;
+  const SourceIcon = sourceIcon;
+
+  const emptyHint = (() => {
+    if (session.state === "idle" || session.state === "preflight") {
+      return (
+        <span className="inline-flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          게이트웨이 연결 중…
+        </span>
+      );
+    }
+    if (session.state === "reconnecting") {
+      return (
+        <span className="inline-flex items-center gap-2 text-warning">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          연결이 끊어졌어요. 다시 연결 중…
+        </span>
+      );
+    }
+    if (session.state === "paused") return "일시정지 상태입니다. 재개를 누르면 이어서 청취합니다.";
+    if (session.state === "ended" || session.state === "completed")
+      return "세션이 종료되었습니다.";
+    // live && no items
+    return (
+      <span className="inline-flex flex-col items-center gap-2">
+        <span className="inline-flex items-center gap-2 text-ink-secondary">
+          <SourceIcon className="h-4 w-4" />
+          {source === "tab_audio" ? "탭 오디오" : "마이크"} 연결됨 · 음성을 기다리는 중…
+        </span>
+        <span className="text-xs text-ink-muted">
+          말씀을 시작하시면 원문과 번역이 여기 표시됩니다.
+        </span>
+      </span>
+    );
+  })();
+
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] flex-col">
+      {/* 상단: 상태·시간·네트워크 */}
       <div className="sticky top-14 z-10 border-b border-border-subtle bg-canvas/90 backdrop-blur">
         <div className="container flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
-          <Badge tone="info" dot>
-            청취 중
+          <Badge tone={stateTone(session.state)} dot={isLive}>
+            {stateLabel(session.state)}
           </Badge>
           <NetworkStatus />
           <SessionClock
@@ -124,14 +203,71 @@ export default function ListenerPage({
               />
             </>
           )}
-          <div className="ml-auto text-sm text-ink-muted">
-            주제 <span className="text-ink-primary">추정 중…</span>
+          <div className="ml-auto flex items-center gap-1.5 text-xs text-ink-muted">
+            <SourceIcon className="h-3.5 w-3.5" />
+            입력: {source === "tab_audio" ? "탭 오디오" : "마이크"}
           </div>
         </div>
       </div>
-      <div className="flex-1 rounded-2xl border border-border-subtle bg-surface container my-4 min-h-[60vh]">
-        <LiveTranscript items={session.items} />
-      </div>
+
+      {/* 에러 배너 */}
+      {session.lastError && (
+        <div className="container mt-3">
+          <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium">청취를 시작할 수 없어요</p>
+              <p className="mt-0.5 text-xs break-all">{session.lastError}</p>
+              <p className="mt-1 text-xs text-ink-secondary">
+                마이크/탭 오디오 권한을 확인한 뒤 페이지를 새로고침해 주세요.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* transcript 프레임 — 일반 통역 모드와 동일 스타일 */}
+      <section className="container grid flex-1 gap-4 py-4 lg:grid-cols-[1fr_280px]">
+        <div className="flex flex-col rounded-2xl border border-border-subtle bg-surface min-h-[60vh] overflow-hidden">
+          <LiveTranscript
+            items={session.items}
+            onClarify={session.requestClarify}
+            emptyHint={emptyHint}
+          />
+        </div>
+        <aside className="space-y-3">
+          <InfoCard
+            label="현재 상태"
+            value={stateLabel(session.state)}
+            icon={<SourceIcon className="h-4 w-4 text-primary" />}
+            sub={
+              isActiveOrWaiting && hasItems
+                ? `${session.items.length}개 발화 누적`
+                : isLive
+                ? "음성 대기 중"
+                : undefined
+            }
+          />
+          <InfoCard
+            label="입력 소스"
+            value={source === "tab_audio" ? "탭 오디오" : "마이크"}
+            sub={
+              source === "tab_audio"
+                ? "Chrome/Edge 에서 오디오 포함 공유 필요"
+                : "내장/외장 마이크"
+            }
+          />
+          {session.rttLevel === "degraded" && (
+            <InfoCard
+              label="네트워크"
+              value="저하됨"
+              sub="인터넷 연결 품질이 낮아 지연이 있을 수 있습니다."
+              warning
+            />
+          )}
+        </aside>
+      </section>
+
       <ControlBar
         state={session.state}
         micMuted={session.micMuted}
@@ -172,6 +308,45 @@ export default function ListenerPage({
           }
         }}
       />
+    </div>
+  );
+}
+
+function InfoCard({
+  label,
+  value,
+  sub,
+  icon,
+  warning = false,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  icon?: React.ReactNode;
+  warning?: boolean;
+}) {
+  return (
+    <div
+      className={
+        "rounded-2xl border bg-surface p-3 " +
+        (warning
+          ? "border-warning/40"
+          : "border-border-subtle")
+      }
+    >
+      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-ink-muted">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <p
+        className={
+          "mt-1 text-base font-semibold " +
+          (warning ? "text-warning" : "text-ink-primary")
+        }
+      >
+        {value}
+      </p>
+      {sub && <p className="mt-0.5 text-xs text-ink-muted">{sub}</p>}
     </div>
   );
 }
