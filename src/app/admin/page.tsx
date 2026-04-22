@@ -1,6 +1,22 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import {
+  Users as UsersIcon,
+  ListChecks,
+  BarChart3,
+  FileSearch,
+  ArrowRight,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabaseServer } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
+import { supabaseService } from "@/lib/supabase/service";
+import { kstYyyymm } from "@/lib/billing/quota";
+
+/**
+ * Server Component 기반 관리자 대시보드.
+ * 이전에는 self-fetch 로 /api/admin/overview 를 호출했지만 SSR 요청에 쿠키가
+ * 없어 인증 실패로 KPI 가 전부 "—" 로 떨어졌다. 이제 service-role 로 직접 집계.
+ */
 
 async function requireAdmin() {
   const sb = supabaseServer();
@@ -12,35 +28,189 @@ async function requireAdmin() {
     .from("users")
     .select("role")
     .eq("id", user.id)
-    .maybeSingle();
-  if (!prof || !["admin", "superadmin"].includes((prof as any).role)) {
+    .maybeSingle<{ role: string }>();
+  if (!prof || !["admin", "superadmin"].includes(prof.role)) {
     redirect("/");
   }
 }
 
+/** 원가 가정값 (admin/usage 와 동일 상수). 실측 후 확정 예정. */
+const ASSUMED_COST_USD_PER_MINUTE = 0.028;
+const ASSUMED_USD_TO_KRW = 1400;
+
+function kstMidnightISO(): string {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 3600 * 1000);
+  kst.setUTCHours(0, 0, 0, 0);
+  return new Date(kst.getTime() - 9 * 3600 * 1000).toISOString();
+}
+
+async function loadOverview() {
+  const svc = supabaseService();
+  const since = kstMidnightISO();
+  const yyyymm = kstYyyymm();
+  const abuseSince = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+
+  const [active, trial, signups, revenue, abuse, thisMonthUsage] =
+    await Promise.all([
+      svc
+        .from("sessions")
+        .select("id", { count: "exact", head: true })
+        .in("state", ["preflight", "prepared", "live", "paused"]),
+      svc
+        .from("guest_sessions")
+        .select("id", { count: "exact", head: true })
+        .gt("expires_at", new Date().toISOString()),
+      svc
+        .from("users")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since),
+      svc
+        .from("billing_events")
+        .select("payload,created_at")
+        .gte("created_at", since)
+        .in("event_type", ["checkout.session.completed", "invoice.paid"]),
+      svc
+        .from("quality_events")
+        .select("id", { count: "exact", head: true })
+        .eq("event_type", "abuse_flag")
+        .gte("created_at", abuseSince),
+      svc
+        .from("usage_monthly")
+        .select("seconds_used,user_id")
+        .eq("yyyymm", yyyymm),
+    ]);
+
+  const totalSecondsThisMonth =
+    (thisMonthUsage.data ?? []).reduce(
+      (acc, r) => acc + Number(r.seconds_used ?? 0),
+      0,
+    ) ?? 0;
+  const activeUsersThisMonth = thisMonthUsage.data?.length ?? 0;
+
+  const costUsd =
+    (totalSecondsThisMonth / 60) * ASSUMED_COST_USD_PER_MINUTE;
+  const costKrw = costUsd * ASSUMED_USD_TO_KRW;
+
+  const todayRevenueKrw =
+    (revenue.data ?? []).reduce((acc: number, row) => {
+      const payload = row.payload as
+        | { data?: { object?: Record<string, unknown> } }
+        | null;
+      const obj = payload?.data?.object ?? {};
+      const amount =
+        (obj["amount_total"] as number | undefined) ??
+        (obj["amount_paid"] as number | undefined) ??
+        (obj["amount_due"] as number | undefined) ??
+        0;
+      const currency =
+        (obj["currency"] as string | undefined)?.toLowerCase() ?? "krw";
+      if (currency !== "krw") return acc;
+      return acc + Number(amount || 0);
+    }, 0);
+
+  return {
+    activeSessions: active.count ?? 0,
+    trialActive: trial.count ?? 0,
+    todaySignups: signups.count ?? 0,
+    todayRevenueKrw,
+    abuseFlags24h: abuse.count ?? 0,
+    thisMonth: {
+      yyyymm,
+      totalSeconds: totalSecondsThisMonth,
+      activeUsers: activeUsersThisMonth,
+      estimatedCostKrw: costKrw,
+      estimatedCostUsd: costUsd,
+    },
+  };
+}
+
 export default async function AdminDashboardPage() {
   await requireAdmin();
-  // KPI는 /api/admin/overview 에서 가져옴 (SSR fetch는 서버 기반 토큰 복제 필요)
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const res = await fetch(`${base}/api/admin/overview`, { cache: "no-store" });
-  const overview = res.ok ? await res.json() : null;
+  const ov = await loadOverview();
 
   return (
-    <div className="container max-w-6xl py-10">
-      <h1 className="text-2xl font-semibold">관리자 대시보드</h1>
-      <div className="mt-6 grid gap-4 md:grid-cols-4">
-        <Kpi label="활성 세션" value={overview?.active_sessions ?? "—"} />
-        <Kpi label="체험 진행 중" value={overview?.trial_active ?? "—"} />
-        <Kpi label="오늘 가입" value={overview?.today_signups ?? "—"} />
-        <Kpi
-          label="오늘 매출"
-          value={
-            overview?.today_revenue_krw != null
-              ? `₩${Number(overview.today_revenue_krw).toLocaleString()}`
-              : "—"
-          }
-        />
-      </div>
+    <div className="container max-w-6xl py-10 space-y-10">
+      <header>
+        <h1 className="text-2xl font-semibold">관리자 대시보드</h1>
+        <p className="mt-1 text-sm text-ink-secondary">
+          {ov.thisMonth.yyyymm} · KST 기준 · 원가는 가정 단가 기반 추정치
+        </p>
+      </header>
+
+      {/* Today / realtime KPI */}
+      <section>
+        <h2 className="text-xs uppercase tracking-wider text-ink-muted mb-3">
+          실시간 / 오늘
+        </h2>
+        <div className="grid gap-4 md:grid-cols-4">
+          <Kpi label="활성 세션" value={ov.activeSessions.toLocaleString()} />
+          <Kpi label="체험 진행 중" value={ov.trialActive.toLocaleString()} />
+          <Kpi label="오늘 가입" value={ov.todaySignups.toLocaleString()} />
+          <Kpi
+            label="오늘 매출"
+            value={`₩${ov.todayRevenueKrw.toLocaleString()}`}
+          />
+        </div>
+      </section>
+
+      {/* This month KPI */}
+      <section>
+        <h2 className="text-xs uppercase tracking-wider text-ink-muted mb-3">
+          이번 달
+        </h2>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Kpi
+            label="총 사용 시간"
+            value={`${(ov.thisMonth.totalSeconds / 3600).toFixed(1)} 시간`}
+            sub={`${Math.round(ov.thisMonth.totalSeconds / 60)} 분 · ${ov.thisMonth.activeUsers} 명`}
+          />
+          <Kpi
+            label="추정 API 원가"
+            value={`₩${Math.round(ov.thisMonth.estimatedCostKrw).toLocaleString()}`}
+            sub={`≈ $${ov.thisMonth.estimatedCostUsd.toFixed(2)} · 가정 $${ASSUMED_COST_USD_PER_MINUTE}/분`}
+            warning
+          />
+          <Kpi
+            label="abuse 플래그 (24h)"
+            value={ov.abuseFlags24h.toLocaleString()}
+            sub="quality_events(event_type='abuse_flag') 집계"
+          />
+        </div>
+      </section>
+
+      {/* Navigation hub */}
+      <section>
+        <h2 className="text-xs uppercase tracking-wider text-ink-muted mb-3">
+          상세 화면
+        </h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          <NavCard
+            href="/admin/sessions"
+            icon={<ListChecks className="h-4 w-4" />}
+            title="세션 목록"
+            sub="상태/모드/기간 필터, 상세 drawer"
+          />
+          <NavCard
+            href="/admin/users"
+            icon={<UsersIcon className="h-4 w-4" />}
+            title="사용자"
+            sub="역할 필터, 이메일 검색, 이번 달 사용량, 시간 지급"
+          />
+          <NavCard
+            href="/admin/usage"
+            icon={<BarChart3 className="h-4 w-4" />}
+            title="사용량 / 원가"
+            sub="월별 합계, 상위 사용자, 추정 API 원가"
+          />
+          <NavCard
+            href="/admin/audit"
+            icon={<FileSearch className="h-4 w-4" />}
+            title="감사 로그"
+            sub="환불, 크레딧 지급, 데이터 삭제 이력"
+          />
+        </div>
+      </section>
     </div>
   );
 }
@@ -48,9 +218,13 @@ export default async function AdminDashboardPage() {
 function Kpi({
   label,
   value,
+  sub,
+  warning = false,
 }: {
   label: string;
   value: string | number;
+  sub?: string;
+  warning?: boolean;
 }) {
   return (
     <Card>
@@ -60,8 +234,44 @@ function Kpi({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="text-3xl font-semibold">{value}</p>
+        <p
+          className={
+            "text-3xl font-semibold tabular-nums " +
+            (warning ? "text-warning" : "")
+          }
+        >
+          {value}
+        </p>
+        {sub && <p className="mt-1 text-xs text-ink-muted">{sub}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+function NavCard({
+  href,
+  icon,
+  title,
+  sub,
+}: {
+  href: "/admin/sessions" | "/admin/users" | "/admin/usage" | "/admin/audit";
+  icon: React.ReactNode;
+  title: string;
+  sub: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group rounded-2xl border border-border-subtle bg-surface p-4 transition-colors hover:border-border-strong"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-primary">
+          {icon}
+          <span className="font-medium text-ink-primary">{title}</span>
+        </div>
+        <ArrowRight className="h-4 w-4 text-ink-muted group-hover:text-ink-primary transition-colors" />
+      </div>
+      <p className="mt-1 text-xs text-ink-secondary">{sub}</p>
+    </Link>
   );
 }

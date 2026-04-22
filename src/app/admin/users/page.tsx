@@ -10,12 +10,15 @@ interface Row {
   display_name: string | null;
   billing_status: string | null;
   created_at: string;
+  /** 이번 달(KST) 실제 차감 초수. */
+  seconds_used_this_month: number;
 }
 interface Resp {
   items: Row[];
   total: number;
   page: number;
   size: number;
+  yyyymm: string;
 }
 
 const ROLES = ["", "guest", "member", "paid", "admin", "superadmin"];
@@ -97,8 +100,8 @@ export default function AdminUsersPage() {
             <th className="py-2">가입</th>
             <th>이메일</th>
             <th>역할</th>
-            <th>표시명</th>
             <th>결제 상태</th>
+            <th className="text-right">이번 달 사용</th>
             <th>ID</th>
             <th className="text-right">액션</th>
           </tr>
@@ -109,10 +112,20 @@ export default function AdminUsersPage() {
               <td className="py-2 font-mono text-xs">
                 {new Date(r.created_at).toISOString().slice(0, 10)}
               </td>
-              <td className="py-2">{r.email}</td>
+              <td className="py-2">
+                {r.email}
+                {r.display_name && (
+                  <span className="ml-2 text-xs text-ink-muted">
+                    ({r.display_name})
+                  </span>
+                )}
+              </td>
               <td className="py-2">{r.role}</td>
-              <td className="py-2">{r.display_name ?? "-"}</td>
               <td className="py-2">{r.billing_status ?? "-"}</td>
+              <td className="py-2 text-right font-mono tabular-nums">
+                {(r.seconds_used_this_month / 60).toFixed(1)}
+                <span className="ml-1 text-xs text-ink-muted">분</span>
+              </td>
               <td className="py-2 font-mono text-xs">{r.id.slice(0, 8)}…</td>
               <td className="py-2 text-right">
                 <button
@@ -209,6 +222,12 @@ function CreditGrantModal({
         <h2 className="text-lg font-semibold">사용 시간 지급</h2>
         <p className="mt-1 text-xs text-ink-muted">
           대상: <span className="font-mono">{target.email}</span>
+        </p>
+        <p className="mt-2 text-xs text-ink-secondary">
+          이번 달 현재 사용량:{" "}
+          <strong className="text-ink-primary font-mono tabular-nums">
+            {(target.seconds_used_this_month / 60).toFixed(1)} 분
+          </strong>
         </p>
         <p className="mt-3 text-xs text-ink-secondary">
           이번 달 사용량(usage_monthly.seconds_used)에서 아래 만큼 빼줍니다
