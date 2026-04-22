@@ -64,6 +64,10 @@ export function useInterpretSession(opts: Options) {
   const [state, setState] = useState<SessionState>(INITIAL_STATE);
   const [items, setItems] = useState<UtteranceRow[]>([]);
   const [trialRemaining, setTrialRemaining] = useState<number | null>(null);
+  /** 처음 trial.tick 이 도착했을 때의 remaining 을 "전체 체험" 으로 기록해 UI 진행률 표시용. */
+  const [trialTotal, setTrialTotal] = useState<number | null>(null);
+  /** 세션이 live 로 진입한 이후 흐른 wall-clock 초 (pause 포함, ended 시 정지). */
+  const [sessionElapsedSec, setSessionElapsedSec] = useState<number>(0);
   const [lastError, setLastError] = useState<string | null>(null);
   const [rttLevel, setRttLevel] = useState<WatchdogLevel>("ok");
 
@@ -167,6 +171,9 @@ export function useInterpretSession(opts: Options) {
           return;
         case "trial_time_remaining":
           setTrialRemaining(ev.remaining_s);
+          setTrialTotal((prev) =>
+            prev == null ? ev.remaining_s : Math.max(prev, ev.remaining_s),
+          );
           ctxRef.current.trialRemainingS = ev.remaining_s;
           return;
         case "trial_expired":
@@ -467,6 +474,16 @@ export function useInterpretSession(opts: Options) {
     wsRef.current?.send(JSON.stringify(cmd));
   }
 
+  // 세션 경과 타이머 — live/paused/reconnecting 동안 매초 증가, ended/completed 시 정지.
+  // Wall clock 기준 (pause 포함). 체험 소진 시간과는 별개.
+  useEffect(() => {
+    const active =
+      state === "live" || state === "paused" || state === "reconnecting";
+    if (!active) return;
+    const id = setInterval(() => setSessionElapsedSec((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [state]);
+
   // 언마운트 정리.
   useEffect(
     () => () => {
@@ -490,7 +507,12 @@ export function useInterpretSession(opts: Options) {
     resume,
     end,
     requestClarify,
+    /** 체험 잔여 초. 게스트 외에는 null. */
     trialRemaining,
+    /** 체험 총 초. 첫 tick 수신 후 결정. (UI 진행률 표시용) */
+    trialTotal,
+    /** 세션 시작(live 진입) 이후 wall-clock 경과 초. pause 중에도 흐름. */
+    sessionElapsedSec,
     lastError,
     rttLevel,
   };

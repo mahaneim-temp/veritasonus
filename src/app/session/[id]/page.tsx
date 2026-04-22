@@ -9,6 +9,7 @@ import { PreflightCheck } from "@/components/session/PreflightCheck";
 import { AssetUploader } from "@/components/assets/AssetUploader";
 import { Badge } from "@/components/ui/badge";
 import { useInterpretSession } from "@/hooks/useInterpretSession";
+import { formatDurationSec } from "@/lib/utils/time";
 
 /**
  * 실시간 통역 화면.
@@ -57,7 +58,7 @@ export default function SessionPage({
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] flex-col">
       <div className="sticky top-14 z-10 border-b border-border-subtle bg-canvas/90 backdrop-blur">
-        <div className="container flex items-center gap-3 py-2.5">
+        <div className="container flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
           <Badge
             tone={session.state === "live" ? "danger" : "neutral"}
             dot={session.state === "live"}
@@ -65,10 +66,34 @@ export default function SessionPage({
             {stateLabel}
           </Badge>
           <NetworkStatus />
-          {session.trialRemaining != null && (
-            <Badge tone={session.trialRemaining <= 120 ? "warning" : "info"}>
-              체험 {Math.max(0, session.trialRemaining)}초
-            </Badge>
+          <div
+            className="flex items-baseline gap-1 text-xs text-ink-secondary"
+            title="세션이 시작된 뒤 흐른 전체 시간"
+          >
+            <span className="text-ink-muted">세션</span>
+            <span className="font-mono tabular-nums text-ink-primary">
+              {formatDurationSec(session.sessionElapsedSec)}
+            </span>
+          </div>
+          {session.trialRemaining != null && session.trialTotal != null && (
+            <div
+              className="flex items-baseline gap-1 text-xs"
+              title="실제 음성이 인식된 시간만 차감됩니다 (무음·대기·일시정지 제외)"
+            >
+              <span className="text-ink-muted">체험 사용</span>
+              <span
+                className={`font-mono tabular-nums ${
+                  session.trialRemaining <= 120 ? "text-warning" : "text-ink-primary"
+                }`}
+              >
+                {formatDurationSec(
+                  Math.max(0, session.trialTotal - session.trialRemaining),
+                )}
+              </span>
+              <span className="text-ink-muted">
+                / {formatDurationSec(session.trialTotal)}
+              </span>
+            </div>
           )}
           <div className="flex-1" />
           <label className="flex items-center gap-2 text-xs text-ink-secondary">

@@ -63,7 +63,14 @@ interface SessionCtx {
   utteranceSeq: number;
   lastSourceSeq: number;
   trialTimer: NodeJS.Timeout | null;
-  audioInFlight: boolean;
+  /**
+   * 이전 tick 이후 "말하고 있다" 는 신호(Google STT 의 speech_partial / speech_final) 가
+   * 한 번이라도 들어왔는지. 단순한 오디오 프레임 수신이 아니라 STT 가 음성으로 판별한 구간만 true.
+   * 트라이얼·과금 둘 다 이 기준으로 차감.
+   */
+  speechDetectedSinceLastTick: boolean;
+  /** 과금·관측용: 이번 세션에서 음성이 감지된 누적 초수. tick 당 5초 단위. */
+  speechActiveSeconds: number;
   liveStartedAtMs: number | null;
   usageFinalized: boolean;
   /** 가장 최근의 원문 (assist 컨텍스트용). */
@@ -144,7 +151,8 @@ export async function handleConnection(
           utteranceSeq: 0,
           lastSourceSeq: 0,
           trialTimer: null,
-          audioInFlight: false,
+          speechDetectedSinceLastTick: false,
+          speechActiveSeconds: 0,
           liveStartedAtMs: Date.now(),
           usageFinalized: false,
           lastSourceText: "",
@@ -170,7 +178,7 @@ export async function handleConnection(
 
     // 인증된 이후.
     if (isBinary) {
-      ctx.audioInFlight = true;
+      // 바이너리 수신 자체는 "마이크 켜짐" 일 뿐. "말한 시간" 은 STT 이벤트로 판별 (openProvider 참조).
       ctx.provider?.sendAudio(data as Buffer);
       return;
     }
@@ -351,6 +359,9 @@ async function openProvider(
         const body = text.trim();
         if (!body) return;
 
+        // STT 가 음성을 확정해서 이벤트가 왔다는 것 = 이번 tick 창은 "말한 시간" 으로 카운트.
+        ctx.speechDetectedSinceLastTick = true;
+
         // 1) 보류 중인 짧은 조각이 있으면 이번 final 과 합친다.
         const pending = ctx.pendingShort;
         if (pending) {
@@ -406,7 +417,13 @@ async function openProvider(
         });
       },
       onAssistText: (text) => emitToClient({ type: "assist_text", text }),
-      emitRaw: emitToClient,
+      emitRaw: (event) => {
+        // speech_partial 도 "말하는 중" 신호 — STT interim 결과가 흐르고 있다는 뜻.
+        if ((event as { type?: string }).type === "speech_partial") {
+          ctx.speechDetectedSinceLastTick = true;
+        }
+        emitToClient(event);
+      },
       onError: (code, message) => {
         log.warn({ code, message }, "provider_error");
         emitToClient({
@@ -423,32 +440,47 @@ async function openProvider(
   ctx.flushPendingShort = flushPendingShort;
 }
 
+/**
+ * 5초 tick. "이번 tick 창 안에 STT 가 말하는 중 신호를 줬는가?" 로만 차감 여부 판단.
+ * - 게스트: Redis 트라이얼 카운터 decrement + 클라에 trial.tick 송출.
+ * - 회원: `speechActiveSeconds` 누적만 수행 (finalizeSessionUsage 가 세션 종료 시 DB 반영).
+ * 말 안 함 / pause / 대기 / 마이크 muted 는 speechDetectedSinceLastTick 이 false 라서 자연스럽게 skip.
+ */
 function startTrialTimer(
   ctx: SessionCtx,
   client: WSClient,
   log: PinoLogger,
 ): void {
-  if (ctx.claims.owner_type !== "guest") return;
   ctx.trialTimer = setInterval(async () => {
-    if (!ctx.audioInFlight) return;
-    ctx.audioInFlight = false;
-    const left = await decrement(ctx.claims.sub, TRIAL_TICK_DECREMENT_S);
-    try {
-      client.send(
-        JSON.stringify({
-          type: "trial.tick",
-          remaining_s: Number.isFinite(left) ? left : null,
-        }),
-      );
-    } catch {
-      // ignore
-    }
-    if (left <= 0) {
-      log.info({ session: ctx.claims.session_id }, "trial_expired");
+    if (!ctx.speechDetectedSinceLastTick) return;
+    ctx.speechDetectedSinceLastTick = false;
+    ctx.speechActiveSeconds += TRIAL_TICK_DECREMENT_S;
+
+    if (ctx.claims.owner_type === "guest") {
+      const left = await decrement(ctx.claims.sub, TRIAL_TICK_DECREMENT_S);
+      // 클라이언트 ServerEvent 타입 계약을 따른다 (types/realtime.ts).
       try {
-        client.close(4001, "trial_expired");
+        client.send(
+          JSON.stringify({
+            type: "trial_time_remaining",
+            remaining_s: Number.isFinite(left) ? left : 0,
+          }),
+        );
       } catch {
         // ignore
+      }
+      if (left <= 0) {
+        log.info({ session: ctx.claims.session_id }, "trial_expired");
+        try {
+          client.send(JSON.stringify({ type: "trial_expired" }));
+        } catch {
+          // ignore
+        }
+        try {
+          client.close(4001, "trial_expired");
+        } catch {
+          // ignore
+        }
       }
     }
   }, TRIAL_TICK_MS);
@@ -460,18 +492,16 @@ async function finalizeUsageIfNeeded(
 ): Promise<void> {
   if (ctx.usageFinalized) return;
   ctx.usageFinalized = true;
-  if (!ctx.liveStartedAtMs) return;
-  const elapsedSec = Math.max(
-    0,
-    Math.floor((Date.now() - ctx.liveStartedAtMs) / 1000),
-  );
-  if (elapsedSec === 0) return;
+  // wall-clock 이 아니라 "실제 음성이 감지된 누적 초수" 를 과금 기준으로 저장.
+  // pause / 대기 / 무음 구간은 speechActiveSeconds 에 포함되지 않으므로 자연스럽게 제외.
+  const activeSec = ctx.speechActiveSeconds;
+  if (activeSec === 0) return;
   try {
     await finalizeSessionUsage(
       ctx.claims.session_id,
       ctx.claims.owner_type === "member" ? "member" : "guest",
       ctx.claims.sub,
-      elapsedSec,
+      activeSec,
     );
   } catch (e) {
     log.warn(
