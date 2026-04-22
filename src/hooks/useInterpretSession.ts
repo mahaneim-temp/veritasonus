@@ -52,6 +52,10 @@ import { useMicrophone } from "./useMicrophone";
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
 
+/** 체험 총 시간(초). 서버 GUEST_TRIAL_SECONDS 와 일치해야 함. */
+const TRIAL_TOTAL_SEC =
+  Number(process.env["NEXT_PUBLIC_GUEST_TRIAL_SECONDS"]) || 600;
+
 interface Options {
   sessionId: string;
   mode: SessionMode;
@@ -63,9 +67,8 @@ interface Options {
 export function useInterpretSession(opts: Options) {
   const [state, setState] = useState<SessionState>(INITIAL_STATE);
   const [items, setItems] = useState<UtteranceRow[]>([]);
+  /** 서버에서 받는 체험 잔여 초. null = 아직 모름 (회원 세션은 계속 null). */
   const [trialRemaining, setTrialRemaining] = useState<number | null>(null);
-  /** 처음 trial.tick 이 도착했을 때의 remaining 을 "전체 체험" 으로 기록해 UI 진행률 표시용. */
-  const [trialTotal, setTrialTotal] = useState<number | null>(null);
   /** 세션이 live 로 진입한 이후 흐른 wall-clock 초 (pause 포함, ended 시 정지). */
   const [sessionElapsedSec, setSessionElapsedSec] = useState<number>(0);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -85,6 +88,14 @@ export function useInterpretSession(opts: Options) {
   );
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
+  /** 세션이 live 로 전이된 wall-clock 시각(ms). utterance started_at_ms 계산 근거. */
+  const liveStartedAtRef = useRef<number | null>(null);
+
+  /** 현재 시점의 세션 경과(ms). live 진입 전이면 0. */
+  const sessionElapsedMsAt = useCallback(() => {
+    const t0 = liveStartedAtRef.current;
+    return t0 == null ? 0 : Math.max(0, Date.now() - t0);
+  }, []);
 
   const ctxRef = useRef<Context>({
     mode: opts.mode,
@@ -145,10 +156,21 @@ export function useInterpretSession(opts: Options) {
         case "speech_partial":
           // 실시간성 체감 개선: STT interim 결과를 즉시 표시.
           // speech_final 이 뒤따라 와서 같은 seq 를 덮어쓴다.
-          setItems((prev) => upsert(prev, ev.seq, { source_text: ev.text }));
+          setItems((prev) =>
+            upsert(prev, ev.seq, {
+              source_text: ev.text,
+              // 해당 발화가 처음 나타난 세션 경과 시각(ms). 이후 update 에서는 유지.
+              started_at_ms: sessionElapsedMsAt(),
+            }),
+          );
           return;
         case "speech_final":
-          setItems((prev) => upsert(prev, ev.seq, { source_text: ev.text }));
+          setItems((prev) =>
+            upsert(prev, ev.seq, {
+              source_text: ev.text,
+              started_at_ms: sessionElapsedMsAt(),
+            }),
+          );
           return;
         case "translation_final":
           setItems((prev) =>
@@ -170,10 +192,9 @@ export function useInterpretSession(opts: Options) {
           );
           return;
         case "trial_time_remaining":
-          setTrialRemaining(ev.remaining_s);
-          setTrialTotal((prev) =>
-            prev == null ? ev.remaining_s : Math.max(prev, ev.remaining_s),
-          );
+          // 서버가 이미 decrement 한 remaining 을 보낸다. TRIAL_TOTAL_SEC 과 함께
+          // "사용/남은" 값을 일관되게 계산한다 — 두 값의 합은 항상 TRIAL_TOTAL_SEC.
+          setTrialRemaining(Math.max(0, ev.remaining_s));
           ctxRef.current.trialRemainingS = ev.remaining_s;
           return;
         case "trial_expired":
@@ -480,6 +501,10 @@ export function useInterpretSession(opts: Options) {
     const active =
       state === "live" || state === "paused" || state === "reconnecting";
     if (!active) return;
+    // live 로 처음 진입한 시각을 기록 — utterance started_at_ms 기준으로 쓴다.
+    if (liveStartedAtRef.current == null) {
+      liveStartedAtRef.current = Date.now();
+    }
     const id = setInterval(() => setSessionElapsedSec((n) => n + 1), 1000);
     return () => clearInterval(id);
   }, [state]);
@@ -509,8 +534,13 @@ export function useInterpretSession(opts: Options) {
     requestClarify,
     /** 체험 잔여 초. 게스트 외에는 null. */
     trialRemaining,
-    /** 체험 총 초. 첫 tick 수신 후 결정. (UI 진행률 표시용) */
-    trialTotal,
+    /** 체험 총 초 (env 기반, 고정). 사용/남은 계산의 분모. */
+    trialTotal: trialRemaining != null ? TRIAL_TOTAL_SEC : null,
+    /** 실제 차감된 체험 시간 (초). 남은 + 사용 = 총 이 항상 성립. */
+    trialConsumed:
+      trialRemaining != null
+        ? Math.max(0, TRIAL_TOTAL_SEC - trialRemaining)
+        : null,
     /** 세션 시작(live 진입) 이후 wall-clock 경과 초. pause 중에도 흐름. */
     sessionElapsedSec,
     lastError,

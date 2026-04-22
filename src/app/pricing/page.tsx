@@ -1,6 +1,6 @@
-import { Check } from "lucide-react";
+import { Check, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PLANS } from "@/lib/billing/plans";
+import { PLANS, PRICING_IS_ASSUMED } from "@/lib/billing/plans";
 import Link from "next/link";
 
 export default function PricingPage() {
@@ -12,6 +12,17 @@ export default function PricingPage() {
       <p className="mt-2 text-center text-ink-secondary">
         먼저 10분 무료 체험으로 품질을 확인하세요.
       </p>
+
+      {PRICING_IS_ASSUMED && (
+        <div className="mt-6 mx-auto max-w-3xl flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-ink-secondary">
+          <Info className="h-4 w-4 mt-0.5 text-warning shrink-0" />
+          <p>
+            아래 가격·시간 한도는{" "}
+            <strong className="text-ink-primary">공식 확정 전 가정값</strong>
+            입니다. 공개 베타 전 Google Cloud 원가 실측 후 최종 가격·플랜을 확정합니다.
+          </p>
+        </div>
+      )}
 
       <div className="mt-12 grid gap-6 md:grid-cols-3">
         {PLANS.map((plan) => (
@@ -32,6 +43,9 @@ export default function PricingPage() {
                   : ""}
               </span>
             </p>
+            {plan.assumed && (
+              <p className="mt-1 text-[11px] text-warning">가정값 · 원가 실측 후 확정 예정</p>
+            )}
             <ul className="mt-6 space-y-2 text-sm text-ink-secondary flex-1">
               {plan.features.map((f) => (
                 <li key={f} className="flex gap-2">

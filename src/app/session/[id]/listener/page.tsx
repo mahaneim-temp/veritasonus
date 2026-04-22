@@ -6,6 +6,7 @@ import { LiveTranscript } from "@/components/session/LiveTranscript";
 import { ControlBar } from "@/components/session/ControlBar";
 import { ListenerSourcePicker } from "@/components/session/ListenerSourcePicker";
 import { Badge } from "@/components/ui/badge";
+import { SessionClock } from "@/components/session/SessionClock";
 import { ListenerConsentModal } from "@/components/listener/ConsentModal";
 import { useInterpretSession } from "@/hooks/useInterpretSession";
 import { formatDurationSec } from "@/lib/utils/time";
@@ -80,41 +81,32 @@ export default function ListenerPage({
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] flex-col">
       <div className="sticky top-14 z-10 border-b border-border-subtle bg-canvas/90 backdrop-blur">
-        <div className="container flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+        <div className="container flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
           <Badge tone="info" dot>
             청취 중
           </Badge>
           <NetworkStatus />
-          <div
-            className="flex items-baseline gap-1 text-xs text-ink-secondary"
+          <SessionClock
+            label="세션"
+            value={formatDurationSec(session.sessionElapsedSec)}
             title="세션이 시작된 뒤 흐른 전체 시간"
-          >
-            <span className="text-ink-muted">세션</span>
-            <span className="font-mono tabular-nums text-ink-primary">
-              {formatDurationSec(session.sessionElapsedSec)}
-            </span>
-          </div>
-          {session.trialRemaining != null && session.trialTotal != null && (
-            <div
-              className="flex items-baseline gap-1 text-xs"
-              title="실제 음성이 인식된 시간만 차감됩니다"
-            >
-              <span className="text-ink-muted">체험 사용</span>
-              <span
-                className={`font-mono tabular-nums ${
-                  session.trialRemaining <= 120 ? "text-warning" : "text-ink-primary"
-                }`}
-              >
-                {formatDurationSec(
-                  Math.max(0, session.trialTotal - session.trialRemaining),
-                )}
-              </span>
-              <span className="text-ink-muted">
-                / {formatDurationSec(session.trialTotal)}
-              </span>
-            </div>
+          />
+          {session.trialConsumed != null && session.trialRemaining != null && (
+            <>
+              <SessionClock
+                label="사용"
+                value={formatDurationSec(session.trialConsumed)}
+                title="실제 음성이 인식된 시간만 차감됩니다"
+              />
+              <SessionClock
+                label="남은"
+                value={formatDurationSec(session.trialRemaining)}
+                highlight={session.trialRemaining <= 120}
+                title="체험 잔여 시간"
+              />
+            </>
           )}
-          <div className="ml-auto text-xs text-ink-muted">
+          <div className="ml-auto text-sm text-ink-muted">
             주제 <span className="text-ink-primary">추정 중…</span>
           </div>
         </div>

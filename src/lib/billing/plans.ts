@@ -5,7 +5,17 @@ export interface Plan {
   interval: "monthly" | "yearly" | null;
   features: string[];
   cta: string;
+  /** 현재 가격·한도가 Google Cloud 실측 전 가정값인지 여부. UI 가 고지 배너에 사용. */
+  assumed?: boolean;
 }
+
+/**
+ * ⚠ 현재 priceKrw · features 의 숫자 값은 모두 **가정값**이다.
+ * Google Cloud STT ($0.024/분) + Translation ($20/1M char) + Gemini 호출 원가를
+ * 실측한 뒤 최종 확정해야 한다. F-1 usage_monthly 누적 데이터로 실측 가능.
+ * 확정 시 본 파일과 /pricing 페이지 배너를 같은 커밋에서 갱신.
+ */
+export const PRICING_IS_ASSUMED = true;
 
 export const PLANS: Plan[] = [
   {
@@ -27,13 +37,14 @@ export const PLANS: Plan[] = [
     priceKrw: 29000,
     interval: "monthly",
     features: [
-      "무제한 세션",
+      "월 20시간(가정) 사용 가능",
       "고품질 모드",
       "사후 복원 무제한",
       "내보내기 (PDF/이메일)",
       "자료 업로드 50MB/세션",
     ],
     cta: "월간 시작",
+    assumed: true,
   },
   {
     id: "pro_yearly",
@@ -46,6 +57,7 @@ export const PLANS: Plan[] = [
       "팀 공유(베타)",
     ],
     cta: "연간 시작",
+    assumed: true,
   },
 ];
 
