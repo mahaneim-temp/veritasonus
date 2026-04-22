@@ -209,6 +209,19 @@ create table if not exists public.usage_monthly (
   primary key (user_id, yyyymm)
 );
 
+-- A-6 감사 로그: 관리자(또는 시스템) 행위를 추적.
+create table if not exists public.audit_log (
+  id uuid primary key default gen_random_uuid(),
+  actor_id uuid,                      -- users.id. 시스템 actor 는 null.
+  action text not null,               -- refund | role_change | session_terminate | abuse_flag | data_delete | ...
+  target_type text not null,          -- session | user | billing_event | ...
+  target_id text,                     -- uuid 또는 외부 ID
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists audit_log_actor_idx on public.audit_log(actor_id, created_at desc);
+create index if not exists audit_log_target_idx on public.audit_log(target_type, target_id, created_at desc);
+
 -- ── new-user trigger (auth.users → public.users 동기화) ──────
 create or replace function public.handle_new_user()
 returns trigger

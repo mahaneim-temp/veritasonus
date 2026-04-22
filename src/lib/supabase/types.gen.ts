@@ -404,6 +404,36 @@ export interface Database {
         };
         Relationships: [];
       };
+      audit_log: {
+        Row: {
+          id: string;
+          actor_id: string | null;
+          action: string;
+          target_type: string;
+          target_id: string | null;
+          payload: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          actor_id?: string | null;
+          action: string;
+          target_type: string;
+          target_id?: string | null;
+          payload?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          actor_id?: string | null;
+          action?: string;
+          target_type?: string;
+          target_id?: string | null;
+          payload?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {

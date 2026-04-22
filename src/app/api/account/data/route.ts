@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
+import { audit } from "@/lib/audit";
 import { logger } from "@/lib/utils/logger";
 
 export const runtime = "nodejs";
@@ -117,6 +118,19 @@ export async function DELETE(_req: NextRequest) {
     .maybeSingle();
   const hasActiveSubscription =
     (userRow?.billing_status ?? "") === "active";
+
+  // 감사 로그 (성공/부분성공 모두 기록).
+  await audit({
+    actorId: user.id,
+    action: "data_delete",
+    targetType: "user",
+    targetId: user.id,
+    payload: {
+      ok: errors.length === 0,
+      errors: errors.length > 0 ? errors : undefined,
+      stripe_active: hasActiveSubscription,
+    },
+  });
 
   if (errors.length > 0) {
     logger.error("account_data_delete_partial", { user: user.id, errors });
