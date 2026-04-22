@@ -1,0 +1,27 @@
+# dependencies
+node_modules
+.pnp.*
+.yarn/*
+
+# next
+.next/
+out/
+build/
+
+# env
+.env*.local
+.env
+realtime-gateway/.env
+
+# misc
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+
+# tests
+coverage/
+
+# supabase
+supabase/.branches
+supabase/.temp
