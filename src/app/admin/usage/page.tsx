@@ -12,10 +12,18 @@ interface UserRow {
   user_id: string;
   seconds_used: number;
 }
+interface TodayRow {
+  since: string;
+  total_seconds: number;
+  session_count: number;
+  active_members: number;
+}
+
 interface UsageResponse {
   this_month: string;
   byMonth: MonthRow[];
   topUsers: UserRow[];
+  today: TodayRow;
 }
 
 /**
@@ -56,31 +64,69 @@ export default function AdminUsagePage() {
   const thisMonthUsers = thisMonthRow?.users ?? 0;
   const thisMonthCostKrw = estimateCostKrw(thisMonthSec);
 
+  const todaySec = data.today?.total_seconds ?? 0;
+  const todayCostKrw = estimateCostKrw(todaySec);
+
   return (
     <div className="container py-10 space-y-8">
       <h1 className="text-2xl font-semibold">사용량 대시보드</h1>
       <p className="text-sm text-ink-secondary">
-        이번 달 (KST 기준 {data.this_month}) 이후 최근 6개월 집계. F-1 쿼터 관측용.
+        KST 기준. 오늘({new Date(data.today.since).toLocaleDateString("ko-KR")})·이번 달({data.this_month})·최근 6개월. 원가는 가정 단가 추정치.
       </p>
 
+      {/* 오늘 KPI — sessions.speech_active_seconds 직접 합산 (종료된 세션만 포함). */}
+      <section>
+        <h2 className="text-xs uppercase tracking-wider text-ink-muted mb-3">
+          오늘 (KST)
+        </h2>
+        <div className="grid gap-3 md:grid-cols-3">
+          <KpiCard
+            label="오늘 사용"
+            primary={`${(todaySec / 60).toFixed(1)} 분`}
+            sub={`${data.today.session_count} 세션 · 회원 ${data.today.active_members} 명`}
+          />
+          <KpiCard
+            label="오늘 추정 원가"
+            primary={`₩${Math.round(todayCostKrw).toLocaleString()}`}
+            sub={`≈ $${(todayCostKrw / ASSUMED_USD_TO_KRW).toFixed(3)}`}
+            warning
+          />
+          <KpiCard
+            label="기준 시각"
+            primary={new Date(data.today.since).toLocaleString("ko-KR", {
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+            sub="이 시각 이후 ended_at 세션만 포함"
+          />
+        </div>
+      </section>
+
       {/* 이번 달 KPI — 원가는 가정값 기반 추정치 */}
-      <section className="grid gap-3 md:grid-cols-3">
-        <KpiCard
-          label="이번 달 사용"
-          primary={`${(thisMonthSec / 3600).toFixed(1)} 시간`}
-          sub={`${(thisMonthSec / 60).toFixed(0)} 분 · ${thisMonthUsers} 명`}
-        />
-        <KpiCard
-          label="이번 달 추정 API 원가"
-          primary={`₩${Math.round(thisMonthCostKrw).toLocaleString()}`}
-          sub={`≈ $${(thisMonthCostKrw / ASSUMED_USD_TO_KRW).toFixed(2)} · 가정 단가 $${ASSUMED_COST_USD_PER_MINUTE}/분`}
-          warning
-        />
-        <KpiCard
-          label="분당 원가 상수"
-          primary={`$${ASSUMED_COST_USD_PER_MINUTE.toFixed(3)}`}
-          sub={`환율 ${ASSUMED_USD_TO_KRW.toLocaleString()} KRW/USD`}
-        />
+      <section>
+        <h2 className="text-xs uppercase tracking-wider text-ink-muted mb-3">
+          이번 달
+        </h2>
+        <div className="grid gap-3 md:grid-cols-3">
+          <KpiCard
+            label="이번 달 사용"
+            primary={`${(thisMonthSec / 3600).toFixed(1)} 시간`}
+            sub={`${(thisMonthSec / 60).toFixed(0)} 분 · ${thisMonthUsers} 명`}
+          />
+          <KpiCard
+            label="이번 달 추정 API 원가"
+            primary={`₩${Math.round(thisMonthCostKrw).toLocaleString()}`}
+            sub={`≈ $${(thisMonthCostKrw / ASSUMED_USD_TO_KRW).toFixed(2)} · 가정 단가 $${ASSUMED_COST_USD_PER_MINUTE}/분`}
+            warning
+          />
+          <KpiCard
+            label="분당 원가 상수"
+            primary={`$${ASSUMED_COST_USD_PER_MINUTE.toFixed(3)}`}
+            sub={`환율 ${ASSUMED_USD_TO_KRW.toLocaleString()} KRW/USD`}
+          />
+        </div>
       </section>
 
       <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-ink-secondary">

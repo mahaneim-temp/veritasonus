@@ -2,6 +2,7 @@
  * GET /api/admin/usage — 관리자 사용량 대시보드 데이터.
  *
  * 기본 응답:
+ *   - today: 오늘(KST 자정 이후 종료된 세션) 집계 — 총 초수 + 세션 수 + 고유 사용자 수
  *   - byMonth: 최근 6개월 집계 (yyyymm 별 총 초, 고유 사용자 수)
  *   - topUsers: 이번 달 상위 사용자 20명
  */
@@ -11,6 +12,13 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { kstYyyymm } from "@/lib/billing/quota";
 import { logger } from "@/lib/utils/logger";
+
+function kstMidnightISO(): string {
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 3600 * 1000);
+  kst.setUTCHours(0, 0, 0, 0);
+  return new Date(kst.getTime() - 9 * 3600 * 1000).toISOString();
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,9 +48,10 @@ export async function GET(_req: NextRequest) {
   }
   const svc = supabaseService();
   const thisMonth = kstYyyymm();
+  const todayStart = kstMidnightISO();
 
   try {
-    const [allRows, topThisMonth] = await Promise.all([
+    const [allRows, topThisMonth, todayRows] = await Promise.all([
       svc
         .from("usage_monthly")
         .select("yyyymm,seconds_used,user_id")
@@ -54,6 +63,12 @@ export async function GET(_req: NextRequest) {
         .eq("yyyymm", thisMonth)
         .order("seconds_used", { ascending: false })
         .limit(20),
+      // 오늘(KST 자정 이후 종료된) 세션 — speech_active_seconds 직접 합산.
+      svc
+        .from("sessions")
+        .select("owner_type,owner_id,speech_active_seconds,ended_at,mode")
+        .gte("ended_at", todayStart)
+        .not("ended_at", "is", null),
     ]);
 
     const byMonthMap = new Map<
@@ -74,10 +89,27 @@ export async function GET(_req: NextRequest) {
       .sort((a, b) => (a.yyyymm < b.yyyymm ? 1 : -1))
       .slice(0, 6);
 
+    // 오늘 집계 — 종료된 세션의 speech_active_seconds 합산.
+    const todayData = todayRows.data ?? [];
+    let todayTotalSeconds = 0;
+    const todayOwners = new Set<string>();
+    for (const row of todayData) {
+      todayTotalSeconds += Number(row.speech_active_seconds ?? 0);
+      if (row.owner_type === "member" && row.owner_id) {
+        todayOwners.add(row.owner_id);
+      }
+    }
+
     return NextResponse.json({
       this_month: thisMonth,
       byMonth,
       topUsers: topThisMonth.data ?? [],
+      today: {
+        since: todayStart,
+        total_seconds: todayTotalSeconds,
+        session_count: todayData.length,
+        active_members: todayOwners.size,
+      },
     });
   } catch (e) {
     logger.error("admin_usage_failed", { e: String(e) });

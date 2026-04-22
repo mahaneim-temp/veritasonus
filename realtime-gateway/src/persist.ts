@@ -68,15 +68,29 @@ export async function updateUtteranceTranslation(
 type SessionUpdate = Database["public"]["Tables"]["sessions"]["Update"];
 
 /**
- * F-1: 세션 종료 시 usage_monthly 누적. openai-bridge 가 control.end / ws close 양 경로에서 호출.
+ * F-1: 세션 종료 시 usage_monthly 누적 + 세션 수준 speech_active_seconds 기록.
+ * session-handler 가 control.end / ws close 양 경로에서 호출.
+ * 세션 수준 누적값은 "오늘 사용량" 등 일별 집계에 사용.
  */
 export async function finalizeSessionUsage(
-  _sessionId: string,
+  sessionId: string,
   ownerType: "member" | "guest",
   ownerId: string,
   elapsedSeconds: number,
 ): Promise<void> {
   await addSessionUsage(sb(), ownerType, ownerId, elapsedSeconds);
+  try {
+    const { error } = await sb()
+      .from("sessions")
+      .update({ speech_active_seconds: Math.max(0, Math.floor(elapsedSeconds)) })
+      .eq("id", sessionId);
+    if (error) throw error;
+  } catch (e) {
+    logger.warn(
+      { err: String(e), session: sessionId },
+      "session_speech_active_write_failed",
+    );
+  }
 }
 
 export async function markSessionState(

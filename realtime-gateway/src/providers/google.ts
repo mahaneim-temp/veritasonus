@@ -16,6 +16,7 @@
 
 import speech from "@google-cloud/speech";
 import { v2 as translateV2 } from "@google-cloud/translate";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   ProviderEmitter,
   ProviderHandle,
@@ -24,6 +25,8 @@ import type {
 } from "./types.js";
 import { runAssist } from "./gemini.js";
 import { ENV } from "../env.js";
+import type { Database } from "../db-types.js";
+import { extractBiasPhrases } from "../biasing.js";
 
 /** google-gax 의 ClientOptions 는 index signature 를 요구. 실제 SDK 타입은 transitive
  *  dep 으로만 접근 가능해 여기서는 최소 필드만 정의하고 SDK 경계에서 타입 단언. */
@@ -45,6 +48,16 @@ const STREAM_RESTART_MS = 4 * 60 * 1000 + 50 * 1000; // 4:50 — Google 5분 제
 
 let _sttClient: SpeechClient | null = null;
 let _translateClient: translateV2.Translate | null = null;
+let _sb: SupabaseClient<Database> | null = null;
+function sb(): SupabaseClient<Database> {
+  if (_sb) return _sb;
+  _sb = createClient<Database>(
+    ENV.SUPABASE_URL,
+    ENV.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  );
+  return _sb;
+}
 
 function credentials(): GoogleClientOptions {
   const raw = process.env["GOOGLE_SERVICE_ACCOUNT_JSON"];
@@ -105,26 +118,71 @@ class GoogleSession implements ProviderHandle {
   private restartTimer: NodeJS.Timeout | null = null;
   private closed = false;
   private lastFinalSeq = 0;
+  /** 파싱된 자료에서 뽑은 biasing phrases. open() 에서 1회 계산 후 재시작 때마다 재사용. */
+  private biasPhrases: string[] = [];
 
   constructor(private readonly opts: ProviderStartOptions) {}
 
   async open(): Promise<void> {
+    await this.loadBiasPhrases();
     this.openStream();
+  }
+
+  /**
+   * 해당 세션의 파싱 완료된 session_assets.extracted_text 를 긁어 phrase 목록 생성.
+   * STT 스트림을 열기 전에 1회 호출 — Google Cloud 호출은 필요 없음 (DB 만).
+   */
+  private async loadBiasPhrases(): Promise<void> {
+    try {
+      const { data, error } = await sb()
+        .from("session_assets")
+        .select("extracted_text,asset_type")
+        .eq("session_id", this.opts.sessionId)
+        .eq("parse_status", "done")
+        .not("extracted_text", "is", null);
+      if (error) throw error;
+      const texts = (data ?? [])
+        .map((row) => (row.extracted_text ?? "") as string)
+        .filter((s) => s.length > 0);
+      if (texts.length === 0) {
+        this.biasPhrases = [];
+        return;
+      }
+      this.biasPhrases = extractBiasPhrases(texts);
+      this.opts.log.info(
+        {
+          session: this.opts.sessionId,
+          assets: texts.length,
+          phrases: this.biasPhrases.length,
+        },
+        "biasing_loaded",
+      );
+    } catch (e) {
+      this.opts.log.warn(
+        { err: String(e), session: this.opts.sessionId },
+        "biasing_load_failed",
+      );
+      this.biasPhrases = [];
+    }
   }
 
   private openStream(): void {
     if (this.closed) return;
     const languageCode = toBcp47(this.opts.sourceLang);
-    const request = {
-      config: {
-        encoding: "LINEAR16" as const,
-        sampleRateHertz: 16000,
-        languageCode,
-        enableAutomaticPunctuation: true,
-        model: "latest_long",
-      },
-      interimResults: true,
+    const config: Record<string, unknown> = {
+      encoding: "LINEAR16",
+      sampleRateHertz: 16000,
+      languageCode,
+      enableAutomaticPunctuation: true,
+      model: "latest_long",
     };
+    // Biasing: 파싱된 원고/용어집을 phrase hint 로 주입. boost 는 mild(10).
+    if (this.biasPhrases.length > 0) {
+      config["speechContexts"] = [
+        { phrases: this.biasPhrases, boost: 10 },
+      ];
+    }
+    const request = { config, interimResults: true };
 
     const stream = sttClient()
       .streamingRecognize(request as never) as unknown as SttStream;

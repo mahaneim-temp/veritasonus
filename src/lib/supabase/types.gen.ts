@@ -92,6 +92,7 @@ export interface Database {
           recording_enabled: boolean;
           started_at: string | null;
           ended_at: string | null;
+          speech_active_seconds: number;
           created_at: string;
           metadata: Json;
         };
@@ -110,6 +111,7 @@ export interface Database {
           recording_enabled?: boolean;
           started_at?: string | null;
           ended_at?: string | null;
+          speech_active_seconds?: number;
           created_at?: string;
           metadata?: Json;
         };
@@ -128,6 +130,7 @@ export interface Database {
           recording_enabled?: boolean;
           started_at?: string | null;
           ended_at?: string | null;
+          speech_active_seconds?: number;
           created_at?: string;
           metadata?: Json;
         };

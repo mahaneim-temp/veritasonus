@@ -211,7 +211,7 @@ export default async function AdminDashboardPage() {
         <h2 className="text-xs uppercase tracking-wider text-ink-muted mb-3">
           이번 달
         </h2>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <Kpi
             label="총 사용 시간"
             value={`${(ov.thisMonth.totalSeconds / 3600).toFixed(1)} 시간`}
@@ -222,6 +222,19 @@ export default async function AdminDashboardPage() {
             value={`₩${Math.round(ov.thisMonth.estimatedCostKrw).toLocaleString()}`}
             sub={`≈ $${ov.thisMonth.estimatedCostUsd.toFixed(2)} · 가정 $${ASSUMED_COST_USD_PER_MINUTE}/분`}
             warning
+          />
+          <Kpi
+            label="1인당 평균 원가"
+            value={
+              ov.thisMonth.activeUsers > 0
+                ? `₩${Math.round(ov.thisMonth.estimatedCostKrw / ov.thisMonth.activeUsers).toLocaleString()}`
+                : "—"
+            }
+            sub={
+              ov.thisMonth.activeUsers > 0
+                ? `활성 ${ov.thisMonth.activeUsers} 명 기준`
+                : "이번 달 활성 사용자 없음"
+            }
           />
           <Kpi
             label="abuse 플래그 (24h)"

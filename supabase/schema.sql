@@ -94,11 +94,15 @@ create table if not exists public.sessions (
   recording_enabled boolean not null default false,
   started_at timestamptz,
   ended_at timestamptz,
+  -- F-1 과금 기준과 동일: STT 가 음성을 감지한 누적 초수. gateway 가 세션 종료 시 기록.
+  speech_active_seconds int not null default 0,
   created_at timestamptz not null default now(),
   metadata jsonb not null default '{}'::jsonb
 );
 create index if not exists sessions_owner_idx on public.sessions(owner_type, owner_id, created_at desc);
 create index if not exists sessions_state_idx on public.sessions(state);
+-- 오늘/일별 집계용 — ended_at 기준으로 범위 쿼리가 많음.
+create index if not exists sessions_ended_at_idx on public.sessions(ended_at desc);
 
 create table if not exists public.session_assets (
   id uuid primary key default gen_random_uuid(),
