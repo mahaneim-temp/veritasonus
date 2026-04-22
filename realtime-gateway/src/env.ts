@@ -25,6 +25,11 @@ if (missing.length > 0) {
   }
 }
 
+type ProviderKey = "openai" | "google";
+function normalizeProvider(raw: string | undefined): ProviderKey {
+  return raw === "openai" ? "openai" : "google";
+}
+
 export const ENV = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
   OPENAI_REALTIME_MODEL:
@@ -47,4 +52,11 @@ export const ENV = {
   RECONSTRUCT_POLL_INTERVAL_MS: Number(
     process.env.RECONSTRUCT_POLL_INTERVAL_MS ?? 10_000,
   ),
+  // Provider 선택 — 실시간/복원 모두 공통.
+  REALTIME_PROVIDER: normalizeProvider(process.env.REALTIME_PROVIDER),
+  RECONSTRUCT_PROVIDER: normalizeProvider(
+    process.env.RECONSTRUCT_PROVIDER ?? process.env.REALTIME_PROVIDER,
+  ),
+  // Google AI Studio API key — Gemini 호출용.
+  GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY ?? "",
 };

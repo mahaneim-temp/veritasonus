@@ -16,7 +16,7 @@ import "./env.js";
 import Fastify from "fastify";
 import { WebSocketServer } from "ws";
 import { logger } from "./logger.js";
-import { handleConnection } from "./openai-bridge.js";
+import { handleConnection } from "./session-handler.js";
 import { startParserWorker } from "./parser-worker.js";
 import { startReconstructWorker } from "./reconstruct-worker.js";
 

@@ -18,6 +18,7 @@ import { ENV } from "./env.js";
 import { logger } from "./logger.js";
 import type { Database, Json } from "./db-types.js";
 import { runReconstruction, callOpenAIChat } from "./reconstruct.js";
+import { callGeminiChat } from "./providers/gemini.js";
 
 type ReconRow = Database["public"]["Tables"]["reconstructions"]["Row"];
 
@@ -88,9 +89,11 @@ async function tick(log: PinoLogger): Promise<void> {
 }
 
 async function processOne(row: ReconRow, log: PinoLogger): Promise<void> {
+  const callChat =
+    ENV.RECONSTRUCT_PROVIDER === "google" ? callGeminiChat : callOpenAIChat;
   const outcome = await runReconstruction(row.session_id, {
     sb: sb(),
-    callOpenAI: callOpenAIChat,
+    callOpenAI: callChat,
     log,
   });
 
