@@ -1,14 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { NetworkStatus } from "@/components/shell/NetworkStatus";
 import { LiveTranscript } from "@/components/session/LiveTranscript";
 import { ControlBar } from "@/components/session/ControlBar";
 import { ListenerSourcePicker } from "@/components/session/ListenerSourcePicker";
 import { Badge } from "@/components/ui/badge";
 import { SessionClock } from "@/components/session/SessionClock";
+import { SessionExitModal } from "@/components/session/SessionExitModal";
 import { ListenerConsentModal } from "@/components/listener/ConsentModal";
 import { useInterpretSession } from "@/hooks/useInterpretSession";
+import {
+  useNavigationGuard,
+  type NavigationAttempt,
+} from "@/hooks/useNavigationGuard";
 import { formatDurationSec } from "@/lib/utils/time";
 
 const LEGAL_VERSION = "2026-04-22";
@@ -18,16 +24,28 @@ export default function ListenerPage({
 }: {
   params: { id: string };
 }) {
+  const router = useRouter();
   const { id } = params;
   const [source, setSource] = useState<"mic" | "tab_audio">("mic");
   const [started, setStarted] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
+  const [pendingExit, setPendingExit] = useState<NavigationAttempt | null>(null);
 
   const session = useInterpretSession({
     sessionId: id,
     mode: "listener_live",
     qualityMode: "auto",
     audioSource: source,
+  });
+
+  const sessionDirty =
+    started &&
+    (session.state === "live" ||
+      session.state === "paused" ||
+      session.state === "reconnecting");
+  useNavigationGuard({
+    dirty: sessionDirty,
+    onAttempt: (attempt) => setPendingExit(attempt),
   });
 
   async function logConsentAndStart() {
@@ -121,6 +139,38 @@ export default function ListenerPage({
         onResume={session.resume}
         onEnd={session.end}
         onToggleMic={session.toggleMic}
+      />
+
+      <SessionExitModal
+        open={pendingExit != null}
+        targetLabel={pendingExit?.href ?? undefined}
+        onStay={() => setPendingExit(null)}
+        onLeave={() => {
+          const attempt = pendingExit;
+          setPendingExit(null);
+          try {
+            session.end();
+          } catch {
+            /* noop */
+          }
+          if (attempt?.kind === "link" && attempt.href) {
+            try {
+              const url = new URL(attempt.href);
+              if (url.origin === window.location.origin) {
+                // typedRoutes 는 동적 문자열을 받지 않는다.
+                router.push(
+                  (url.pathname + url.search + url.hash) as never,
+                );
+              } else {
+                window.location.href = attempt.href;
+              }
+            } catch {
+              window.location.href = attempt.href;
+            }
+          } else if (attempt?.kind === "popstate") {
+            window.history.back();
+          }
+        }}
       />
     </div>
   );

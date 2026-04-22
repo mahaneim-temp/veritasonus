@@ -56,6 +56,10 @@ const HEARTBEAT_TIMEOUT_MS = 10_000;
 const TRIAL_TOTAL_SEC =
   Number(process.env["NEXT_PUBLIC_GUEST_TRIAL_SECONDS"]) || 600;
 
+/** transcript 임시 저장용 localStorage 키 + 만료 (24시간). */
+const TRANSCRIPT_STORAGE_PREFIX = "lucid-transcript-";
+const TRANSCRIPT_TTL_MS = 24 * 60 * 60 * 1000;
+
 interface Options {
   sessionId: string;
   mode: SessionMode;
@@ -66,7 +70,10 @@ interface Options {
 
 export function useInterpretSession(opts: Options) {
   const [state, setState] = useState<SessionState>(INITIAL_STATE);
-  const [items, setItems] = useState<UtteranceRow[]>([]);
+  // localStorage 에 백업된 transcript 가 있으면 재진입 시 복원 — 실수로 페이지 이탈했을 때 복구.
+  const [items, setItems] = useState<UtteranceRow[]>(() =>
+    restoreTranscript(opts.sessionId),
+  );
   /** 서버에서 받는 체험 잔여 초. null = 아직 모름 (회원 세션은 계속 null). */
   const [trialRemaining, setTrialRemaining] = useState<number | null>(null);
   /** 세션이 live 로 진입한 이후 흐른 wall-clock 초 (pause 포함, ended 시 정지). */
@@ -495,6 +502,31 @@ export function useInterpretSession(opts: Options) {
     wsRef.current?.send(JSON.stringify(cmd));
   }
 
+  // transcript 임시 저장 — items 변경 시마다 localStorage 에 기록.
+  // 탭 이탈·새로고침 후 같은 세션 ID 로 재진입하면 복구된다.
+  useEffect(() => {
+    try {
+      if (items.length === 0) return;
+      localStorage.setItem(
+        TRANSCRIPT_STORAGE_PREFIX + opts.sessionId,
+        JSON.stringify({ savedAt: Date.now(), items }),
+      );
+    } catch {
+      // Safari private mode 등 localStorage 실패는 무시.
+    }
+  }, [items, opts.sessionId]);
+
+  // 세션이 정상 종료(ended/completed) 되면 백업 제거.
+  useEffect(() => {
+    if (state === "ended" || state === "completed") {
+      try {
+        localStorage.removeItem(TRANSCRIPT_STORAGE_PREFIX + opts.sessionId);
+      } catch {
+        // ignore
+      }
+    }
+  }, [state, opts.sessionId]);
+
   // 세션 경과 타이머 — live/paused/reconnecting 동안 매초 증가, ended/completed 시 정지.
   // Wall clock 기준 (pause 포함). 체험 소진 시간과는 별개.
   useEffect(() => {
@@ -546,6 +578,26 @@ export function useInterpretSession(opts: Options) {
     lastError,
     rttLevel,
   };
+}
+
+/** TTL 내 localStorage 백업이 있으면 복구. 없거나 만료면 빈 배열. */
+function restoreTranscript(sessionId: string): UtteranceRow[] {
+  try {
+    const raw = localStorage.getItem(TRANSCRIPT_STORAGE_PREFIX + sessionId);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as {
+      savedAt?: number;
+      items?: UtteranceRow[];
+    };
+    if (!parsed.savedAt || !parsed.items) return [];
+    if (Date.now() - parsed.savedAt > TRANSCRIPT_TTL_MS) {
+      localStorage.removeItem(TRANSCRIPT_STORAGE_PREFIX + sessionId);
+      return [];
+    }
+    return Array.isArray(parsed.items) ? parsed.items : [];
+  } catch {
+    return [];
+  }
 }
 
 function upsert(

@@ -30,6 +30,7 @@ import type { Logger as PinoLogger } from "pino";
 import { logger } from "./logger.js";
 import { verifyToken, type RealtimeClaims } from "./auth.js";
 import { decrement } from "./trial.js";
+import { ENV } from "./env.js";
 import {
   finalizeSessionUsage,
   markSessionState,
@@ -457,6 +458,10 @@ function startTrialTimer(
     ctx.speechActiveSeconds += TRIAL_TICK_DECREMENT_S;
 
     if (ctx.claims.owner_type === "guest") {
+      // UNLIMITED_TRIAL: 내부 테스트용. Redis 차감 skip, 차감 이벤트도 송출 안 함.
+      // 프로덕션 NODE_ENV 에서는 env.ts 가 강제로 false 로 만든다.
+      if (ENV.UNLIMITED_TRIAL) return;
+
       const left = await decrement(ctx.claims.sub, TRIAL_TICK_DECREMENT_S);
       // 클라이언트 ServerEvent 타입 계약을 따른다 (types/realtime.ts).
       try {

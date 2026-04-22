@@ -9,7 +9,12 @@ import { PreflightCheck } from "@/components/session/PreflightCheck";
 import { AssetUploader } from "@/components/assets/AssetUploader";
 import { Badge } from "@/components/ui/badge";
 import { SessionClock } from "@/components/session/SessionClock";
+import { SessionExitModal } from "@/components/session/SessionExitModal";
 import { useInterpretSession } from "@/hooks/useInterpretSession";
+import {
+  useNavigationGuard,
+  type NavigationAttempt,
+} from "@/hooks/useNavigationGuard";
 import { formatDurationSec } from "@/lib/utils/time";
 
 /**
@@ -27,11 +32,22 @@ export default function SessionPage({
   const { id } = params;
   const [preflightOk, setPreflightOk] = useState(false);
   const [showCorrected, setShowCorrected] = useState(false);
+  const [pendingExit, setPendingExit] = useState<NavigationAttempt | null>(null);
 
   const session = useInterpretSession({
     sessionId: id,
     mode: "interactive_interpretation",
     qualityMode: "auto",
+  });
+
+  // 진행 중(live/paused/reconnecting) 세션에서만 가드 활성.
+  const sessionDirty =
+    session.state === "live" ||
+    session.state === "paused" ||
+    session.state === "reconnecting";
+  useNavigationGuard({
+    dirty: sessionDirty,
+    onAttempt: (attempt) => setPendingExit(attempt),
   });
 
   if (!preflightOk) {
@@ -128,6 +144,41 @@ export default function SessionPage({
           router.push(`/session/${id}/review`);
         }}
         onToggleMic={session.toggleMic}
+      />
+
+      <SessionExitModal
+        open={pendingExit != null}
+        targetLabel={pendingExit?.href ?? undefined}
+        onStay={() => setPendingExit(null)}
+        onLeave={() => {
+          const attempt = pendingExit;
+          setPendingExit(null);
+          try {
+            session.end();
+          } catch {
+            /* noop */
+          }
+          if (attempt?.kind === "link" && attempt.href) {
+            // 같은 origin 이면 SPA 네비게이션, 외부 링크면 full reload.
+            try {
+              const url = new URL(attempt.href);
+              if (url.origin === window.location.origin) {
+                // typedRoutes 는 동적 문자열을 받지 않는다. 런타임 이동 경로라 cast 불가피.
+                router.push(
+                  (url.pathname + url.search + url.hash) as never,
+                );
+              } else {
+                window.location.href = attempt.href;
+              }
+            } catch {
+              window.location.href = attempt.href;
+            }
+          } else if (attempt?.kind === "popstate") {
+            // 이 시점에는 이미 push 로 막은 상태. 한 번 더 뒤로가기.
+            window.history.back();
+          }
+          // beforeunload 케이스는 브라우저가 이미 모달을 띄우고 처리.
+        }}
       />
     </div>
   );

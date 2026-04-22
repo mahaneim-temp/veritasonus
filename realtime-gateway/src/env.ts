@@ -87,4 +87,11 @@ export const ENV = {
   ),
   // Google AI Studio API key — Gemini 호출용.
   GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY ?? "",
+  /**
+   * 내부 테스트 전용 — 게스트 트라이얼을 차감하지 않는다.
+   * 프로덕션(`NODE_ENV=production`)에서는 값과 무관하게 항상 false 로 강제. 실수 유출 방지.
+   */
+  UNLIMITED_TRIAL:
+    process.env.NODE_ENV !== "production" &&
+    (process.env.UNLIMITED_TRIAL ?? "").trim().toLowerCase() === "true",
 };
