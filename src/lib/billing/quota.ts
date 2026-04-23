@@ -145,3 +145,29 @@ export async function markWarnedIfNeeded(
     .eq("yyyymm", yyyymm);
   return { alreadyWarned: false };
 }
+
+import { getEffectiveRemaining } from "./wallet";
+
+/**
+ * Wallet-based quota check.
+ * Returns: { allowed: boolean, remainingSeconds: number | null, role: string | null }
+ * null remainingSeconds = unlimited (admin).
+ */
+export async function checkWalletQuota(
+  sb: Sb,
+  userId: string,
+): Promise<{
+  allowed: boolean;
+  remainingSeconds: number | null;
+  role: string | null;
+}> {
+  const { data: profile } = await sb
+    .from("users")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+  const role = profile?.role ?? null;
+  const remaining = await getEffectiveRemaining(sb, userId, role);
+  if (remaining === null) return { allowed: true, remainingSeconds: null, role };
+  return { allowed: remaining > 0, remainingSeconds: remaining, role };
+}

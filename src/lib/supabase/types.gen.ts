@@ -23,6 +23,9 @@ export interface Database {
           stripe_customer_id: string | null;
           billing_status: string | null;
           created_at: string;
+          marketing_opt_in: boolean;
+          marketing_opt_in_at: string | null;
+          marketing_opt_out_at: string | null;
         };
         Insert: {
           id: string;
@@ -33,6 +36,9 @@ export interface Database {
           stripe_customer_id?: string | null;
           billing_status?: string | null;
           created_at?: string;
+          marketing_opt_in?: boolean;
+          marketing_opt_in_at?: string | null;
+          marketing_opt_out_at?: string | null;
         };
         Update: {
           id?: string;
@@ -43,6 +49,9 @@ export interface Database {
           stripe_customer_id?: string | null;
           billing_status?: string | null;
           created_at?: string;
+          marketing_opt_in?: boolean;
+          marketing_opt_in_at?: string | null;
+          marketing_opt_out_at?: string | null;
         };
         Relationships: [];
       };
@@ -55,6 +64,7 @@ export interface Database {
           started_at: string;
           expires_at: string;
           consumed_seconds: number;
+          mode: string;
         };
         Insert: {
           id?: string;
@@ -64,6 +74,7 @@ export interface Database {
           started_at?: string;
           expires_at: string;
           consumed_seconds?: number;
+          mode?: string;
         };
         Update: {
           id?: string;
@@ -73,6 +84,7 @@ export interface Database {
           started_at?: string;
           expires_at?: string;
           consumed_seconds?: number;
+          mode?: string;
         };
         Relationships: [];
       };
@@ -433,6 +445,72 @@ export interface Database {
           target_type?: string;
           target_id?: string | null;
           payload?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      user_wallet: {
+        Row: {
+          user_id: string;
+          free_seconds_remaining: number;
+          free_reset_yyyymm: string;
+          purchased_seconds: number;
+          granted_seconds: number;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          free_seconds_remaining?: number;
+          free_reset_yyyymm?: string;
+          purchased_seconds?: number;
+          granted_seconds?: number;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          free_seconds_remaining?: number;
+          free_reset_yyyymm?: string;
+          purchased_seconds?: number;
+          granted_seconds?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      credit_packs_ledger: {
+        Row: {
+          id: string;
+          user_id: string;
+          pack_id: string;
+          base_seconds: number;
+          bonus_seconds: number;
+          carried_free_seconds: number;
+          price_krw: number;
+          payment_provider: string;
+          provider_event_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          pack_id: string;
+          base_seconds: number;
+          bonus_seconds: number;
+          carried_free_seconds?: number;
+          price_krw: number;
+          payment_provider?: string;
+          provider_event_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          pack_id?: string;
+          base_seconds?: number;
+          bonus_seconds?: number;
+          carried_free_seconds?: number;
+          price_krw?: number;
+          payment_provider?: string;
+          provider_event_id?: string | null;
           created_at?: string;
         };
         Relationships: [];

@@ -34,6 +34,7 @@ const Body = z.object({
   version: z.string().max(40).optional(),
   session_id: z.string().uuid().optional(),
   user_id: z.string().uuid().optional(),
+  marketing_opt_in: z.boolean().optional(),
 });
 
 function hashIp(ip: string): string {
@@ -116,5 +117,17 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
+
+  // 마케팅 수신 동의 처리
+  if (parsed.data.marketing_opt_in === true && actor_type === "member") {
+    await supabaseService()
+      .from("users")
+      .update({
+        marketing_opt_in: true,
+        marketing_opt_in_at: new Date().toISOString(),
+      })
+      .eq("id", actor_id);
+  }
+
   return NextResponse.json({ ok: true, count: rows.length });
 }

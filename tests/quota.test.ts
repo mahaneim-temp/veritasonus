@@ -28,18 +28,15 @@ describe("kstYyyymm", () => {
 });
 
 describe("quotaSecondsForRole", () => {
-  it("paid role gets pro_monthly quota", () => {
-    expect(quotaSecondsForRole("paid")).toBe(
-      PLAN_QUOTA_SECONDS["pro_monthly"],
-    );
-  });
-
-  it("admin / superadmin are unlimited", () => {
+  // v2: 충전제 지갑 모델로 전환 후 quotaSecondsForRole 는 admin 만 구분.
+  // paid/member 는 wallet.getEffectiveRemaining() 으로 판단 — 여기서는 null 반환.
+  it("admin / superadmin are unlimited (null)", () => {
     expect(quotaSecondsForRole("admin")).toBeNull();
     expect(quotaSecondsForRole("superadmin")).toBeNull();
   });
 
-  it("member / guest / null do not get quota (handled by other policy)", () => {
+  it("paid / member / guest / null all return null (wallet-based policy)", () => {
+    expect(quotaSecondsForRole("paid")).toBeNull();
     expect(quotaSecondsForRole("member")).toBeNull();
     expect(quotaSecondsForRole("guest")).toBeNull();
     expect(quotaSecondsForRole(null)).toBeNull();

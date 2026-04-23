@@ -15,6 +15,10 @@ export interface RealtimeClaims {
   source_lang: string;
   /** 번역 출력 언어. */
   target_lang: string;
+  /** 회원의 유효 잔여 초 (free+purchased+granted 합계). null-safe: 큰 정수로 클램프됨. */
+  effective_remaining_s: number;
+  /** true 이면 utterance DB 저장 skip (맛보기 trial). */
+  skip_persist?: boolean;
   iat: number;
   exp: number;
 }

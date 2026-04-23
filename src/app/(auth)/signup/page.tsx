@@ -15,6 +15,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [agreePrivacy, setAgreePrivacy] = useState(false);
+  const [agreeMarketing, setAgreeMarketing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -29,7 +30,7 @@ export default function SignupPage() {
     const { data, error } = await supabaseClient().auth.signUp({
       email,
       password,
-      options: { data: { locale: "ko" } },
+      options: { data: { locale: "ko", marketing_opt_in: agreeMarketing } },
     });
     if (error) {
       setBusy(false);
@@ -48,6 +49,7 @@ export default function SignupPage() {
             user_id: userId,
             kinds: ["terms_of_service", "privacy_policy"],
             version: LEGAL_VERSION,
+            marketing_opt_in: agreeMarketing,
           }),
         });
       }
@@ -62,7 +64,7 @@ export default function SignupPage() {
     <div className="container max-w-md py-16">
       <h1 className="text-2xl font-semibold">회원 가입</h1>
       <p className="mt-1.5 text-sm text-ink-secondary">
-        무료 체험을 회원 계정으로 이어받습니다.
+        가입 후 매달 10분 무료로 Lucid Interpret을 사용할 수 있습니다.
       </p>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <label className="block">
@@ -126,6 +128,17 @@ export default function SignupPage() {
                 개인정보 처리방침
               </Link>
               에 동의합니다. (필수)
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={agreeMarketing}
+              onChange={(e) => setAgreeMarketing(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="text-ink-secondary">
+              서비스 업데이트, 할인 혜택 등 마케팅 정보 수신에 동의합니다. (선택)
             </span>
           </label>
         </div>

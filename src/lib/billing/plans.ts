@@ -17,6 +17,7 @@ export interface Plan {
  */
 export const PRICING_IS_ASSUMED = true;
 
+/** @deprecated 구독 모델 (subscription). 현재 시스템은 크레딧 팩(wallet) 방식으로 전환됨. */
 export const PLANS: Plan[] = [
   {
     id: "free",
@@ -79,11 +80,68 @@ export const PLAN_QUOTA_SECONDS: Record<string, number | null> = {
 export const QUOTA_WARN_RATIO = 0.8; // 80% 도달 시 이메일 1회 경고.
 export const QUOTA_LIMIT_RATIO = 1.0; // 100% 도달 시 세션 강제 종료.
 
-/** role / plan 에서 쿼터(초)를 얻는다. null = 쿼터 미적용(무제한 또는 Free 정책). */
 export function quotaSecondsForRole(role: string | null | undefined): number | null {
-  // role 은 users.role enum: guest | member | paid | admin | superadmin.
-  // v1 은 단순 매핑: paid → pro_monthly 쿼터, 외 → null.
-  if (role === "paid") return PLAN_QUOTA_SECONDS["pro_monthly"] ?? null;
+  // Wallet-based system: admin/superadmin unlimited, others checked via wallet.
+  // This function is kept for compatibility but wallet.getEffectiveRemaining is preferred.
   if (role === "admin" || role === "superadmin") return null;
-  return null;
+  return null; // wallet system handles per-member quotas
+}
+
+// ── 크레딧 팩 (wallet 방식) ──────────────────────────────────
+
+export const PACK_PRICING_IS_ASSUMED = true;
+
+export interface CreditPack {
+  id: "credit_10k" | "credit_30k" | "credit_50k" | "credit_100k";
+  label: string;
+  description: string;
+  priceKrw: number;
+  seconds: number;
+  bonusSeconds: number;
+  totalSeconds: number;
+  highlight?: boolean;
+}
+
+export const CREDIT_PACKS: CreditPack[] = [
+  {
+    id: "credit_10k",
+    label: "입문",
+    description: "60분",
+    priceKrw: 10_000,
+    seconds: 60 * 60,
+    bonusSeconds: 0,
+    totalSeconds: 60 * 60,
+  },
+  {
+    id: "credit_30k",
+    label: "스탠다드",
+    description: "200분 + 보너스 20분",
+    priceKrw: 30_000,
+    seconds: 200 * 60,
+    bonusSeconds: 20 * 60,
+    totalSeconds: 220 * 60,
+    highlight: true,
+  },
+  {
+    id: "credit_50k",
+    label: "플러스",
+    description: "350분 + 보너스 50분",
+    priceKrw: 50_000,
+    seconds: 350 * 60,
+    bonusSeconds: 50 * 60,
+    totalSeconds: 400 * 60,
+  },
+  {
+    id: "credit_100k",
+    label: "프로",
+    description: "750분 + 보너스 150분",
+    priceKrw: 100_000,
+    seconds: 750 * 60,
+    bonusSeconds: 150 * 60,
+    totalSeconds: 900 * 60,
+  },
+];
+
+export function packById(id: string): CreditPack | undefined {
+  return CREDIT_PACKS.find((p) => p.id === id);
 }

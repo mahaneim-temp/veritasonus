@@ -115,17 +115,9 @@ export default function QuickStartPage() {
         body: JSON.stringify(body),
       });
       if (created.status === 401) {
-        const gr = await fetch("/api/auth/guest/start", {
-          method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ user_agent: navigator.userAgent }),
-        });
-        if (!gr.ok) {
-          const j = await gr.json();
-          throw new Error(j?.error?.message ?? "guest_start_failed");
-        }
-        return start(); // retry
+        // 로그인 필수 — middleware 가 이미 차단하지만 방어 처리
+        router.push(`/login?next=/start/quick`);
+        return;
       }
       const json = (await created.json()) as CreateSessionResponse | {
         error: { message: string };

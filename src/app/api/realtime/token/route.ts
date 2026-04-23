@@ -24,7 +24,7 @@ import {
   DEFAULT_TRIAL_SECONDS,
 } from "@/lib/guest/trial";
 import { getLimiter, rateLimit } from "@/lib/ratelimit";
-import { checkQuotaForUser } from "@/lib/billing/quota";
+import { checkWalletQuota } from "@/lib/billing/quota";
 import { logger } from "@/lib/utils/logger";
 import type { RealtimeTokenResponse } from "@/types/api";
 
@@ -119,25 +119,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // F-1 쿼터: 회원 세션이면 월 한도 확인. 초과 시 토큰 미발급.
+  // 지갑 쿼터: 회원 세션이면 유효 잔여 확인. 초과 시 토큰 미발급.
+  let memberEffectiveRemaining: number | null = null;
   if (r.owner_type === "member" && user) {
-    const evalResult = await checkQuotaForUser(supabaseService(), user.id);
-    if (evalResult.status === "limit_reached") {
+    const walletResult = await checkWalletQuota(supabaseService(), user.id);
+    if (!walletResult.allowed) {
       return NextResponse.json(
         {
           error: {
             code: "quota_exceeded",
             message:
-              "이번 달 사용 시간을 모두 소진하셨습니다. 다음 달에 초기화되거나 플랜 업그레이드 후 이용 가능합니다.",
+              "사용 가능한 시간이 없습니다. 충전 후 이용하거나 관리자에게 시간 추가를 요청하세요.",
             details: {
-              used_seconds: evalResult.usedSeconds,
-              limit_seconds: evalResult.limitSeconds,
+              remaining_seconds: walletResult.remainingSeconds ?? 0,
             },
           },
         },
         { status: 402 },
       );
     }
+    memberEffectiveRemaining = walletResult.remainingSeconds; // null = unlimited (admin)
   }
 
   try {
@@ -150,6 +151,14 @@ export async function POST(req: NextRequest) {
         trial_remaining_s: Number.isFinite(trialRemaining)
           ? Math.floor(trialRemaining)
           : 24 * 3600,
+        // 회원 유효 잔여: null(무제한) → 큰 값으로 클램프
+        effective_remaining_s:
+          r.owner_type === "member"
+            ? memberEffectiveRemaining != null
+              ? Math.floor(memberEffectiveRemaining)
+              : 24 * 3600
+            : Math.floor(trialRemaining === Number.POSITIVE_INFINITY ? 24 * 3600 : trialRemaining),
+        skip_persist: false,
         source_lang: String(r.source_lang ?? "ko"),
         target_lang: String(r.target_lang ?? "en"),
       },

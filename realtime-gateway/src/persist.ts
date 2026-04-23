@@ -32,7 +32,8 @@ export interface UtteranceWrite {
   flags: string[];
 }
 
-export async function writeUtterance(u: UtteranceWrite): Promise<void> {
+export async function writeUtterance(u: UtteranceWrite, skipPersist = false): Promise<void> {
+  if (skipPersist) return; // 맛보기 세션은 utterance 저장 안 함
   try {
     const { error } = await sb().from("utterances").insert(u);
     if (error) throw error;
@@ -79,6 +80,10 @@ export async function finalizeSessionUsage(
   elapsedSeconds: number,
 ): Promise<void> {
   await addSessionUsage(sb(), ownerType, ownerId, elapsedSeconds);
+  // 회원 지갑 차감 (guest 는 Redis trial 로만 관리)
+  if (ownerType === "member") {
+    await deductWalletSeconds(ownerId, elapsedSeconds);
+  }
   try {
     const { error } = await sb()
       .from("sessions")
@@ -90,6 +95,61 @@ export async function finalizeSessionUsage(
       { err: String(e), session: sessionId },
       "session_speech_active_write_failed",
     );
+  }
+}
+
+/**
+ * 회원 지갑에서 사용 시간 차감.
+ * 소진 순서: free → purchased → granted.
+ * 실패해도 세션 종료 자체는 막지 않는다 (warn만).
+ */
+export async function deductWalletSeconds(
+  userId: string,
+  elapsedSeconds: number,
+): Promise<void> {
+  if (elapsedSeconds <= 0) return;
+  const delta = Math.max(0, Math.ceil(elapsedSeconds));
+  try {
+    // Read wallet
+    const { data: walletRaw, error: rErr } = await sb()
+      .from("user_wallet")
+      .select("free_seconds_remaining,purchased_seconds,granted_seconds")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (rErr) throw rErr;
+
+    // KST yyyymm lazy-reset (mirrors wallet.ts logic)
+    const now = new Date();
+    const kstMs = now.getTime() + 9 * 3600 * 1000;
+    const kst = new Date(kstMs);
+    const thisMonth = `${kst.getUTCFullYear()}${String(kst.getUTCMonth() + 1).padStart(2, "0")}`;
+
+    let free = Number(walletRaw?.free_seconds_remaining ?? 600);
+    let purchased = Number(walletRaw?.purchased_seconds ?? 0);
+    let granted = Number(walletRaw?.granted_seconds ?? 0);
+    let rem = delta;
+
+    if (free > 0) { const u = Math.min(free, rem); free -= u; rem -= u; }
+    if (rem > 0 && purchased > 0) { const u = Math.min(purchased, rem); purchased -= u; rem -= u; }
+    if (rem > 0 && granted > 0) { const u = Math.min(granted, rem); granted -= u; rem -= u; }
+    free = Math.max(0, free);
+    purchased = Math.max(0, purchased);
+    granted = Math.max(0, granted);
+
+    const { error: wErr } = await sb().from("user_wallet").upsert(
+      {
+        user_id: userId,
+        free_seconds_remaining: free,
+        free_reset_yyyymm: thisMonth,
+        purchased_seconds: purchased,
+        granted_seconds: granted,
+        updated_at: now.toISOString(),
+      },
+      { onConflict: "user_id" },
+    );
+    if (wErr) throw wErr;
+  } catch (e) {
+    logger.warn({ err: String(e), userId }, "wallet_deduct_failed");
   }
 }
 

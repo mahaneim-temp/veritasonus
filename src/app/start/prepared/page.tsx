@@ -65,6 +65,10 @@ export default function PreparedStartPage() {
       } satisfies CreateSessionRequest),
     });
     const json = await res.json();
+    if (res.status === 401) {
+      router.push("/login?next=/start/prepared");
+      return;
+    }
     if (!res.ok) {
       alert(json?.error?.message ?? "세션 생성 실패");
       return;

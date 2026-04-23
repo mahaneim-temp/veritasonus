@@ -78,10 +78,32 @@ export async function GET(req: NextRequest) {
       usageMap.set(row.user_id, Number(row.seconds_used ?? 0));
     }
   }
-  const enriched = items.map((u) => ({
-    ...u,
-    seconds_used_this_month: usageMap.get(u.id) ?? 0,
-  }));
+  // 지갑 잔액도 함께 조회
+  const walletMap = new Map<string, { free: number; purchased: number; granted: number }>();
+  if (ids.length > 0) {
+    const { data: walletRows } = await supabaseService()
+      .from("user_wallet")
+      .select("user_id,free_seconds_remaining,purchased_seconds,granted_seconds")
+      .in("user_id", ids);
+    for (const row of walletRows ?? []) {
+      walletMap.set(row.user_id, {
+        free: Number(row.free_seconds_remaining ?? 0),
+        purchased: Number(row.purchased_seconds ?? 0),
+        granted: Number(row.granted_seconds ?? 0),
+      });
+    }
+  }
+
+  const enriched = items.map((u) => {
+    const w = walletMap.get(u.id);
+    return {
+      ...u,
+      seconds_used_this_month: usageMap.get(u.id) ?? 0,
+      wallet_free_remaining: w?.free ?? 0,
+      wallet_purchased: w?.purchased ?? 0,
+      wallet_granted: w?.granted ?? 0,
+    };
+  });
 
   return NextResponse.json({
     items: enriched,

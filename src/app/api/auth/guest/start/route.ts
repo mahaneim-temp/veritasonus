@@ -15,10 +15,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { isInviteValid, isInviteRequired } from "@/lib/guest/invite";
-import { isSignupRequiredForTrial } from "@/lib/guest/policy";
-import { supabaseServer } from "@/lib/supabase/server";
 import {
   DEFAULT_TRIAL_SECONDS,
+  TASTE_TRIAL_SECONDS,
   initTrial,
 } from "@/lib/guest/trial";
 import { supabaseService } from "@/lib/supabase/service";
@@ -77,30 +76,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 공개 베타·상용 전환 시 REQUIRE_SIGNUP_FOR_TRIAL=true 로 켜서 비회원 체험을 차단.
-  if (isSignupRequiredForTrial()) {
-    const {
-      data: { user },
-    } = await supabaseServer().auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        {
-          error: {
-            code: "signup_required",
-            message: "체험을 시작하려면 먼저 회원가입(또는 로그인) 해주세요.",
-          },
-        },
-        { status: 403 },
-      );
-    }
-  }
+  const mode = (body as any).mode === "taste" ? "taste" : "trial";
+  const trialSeconds = mode === "taste" ? TASTE_TRIAL_SECONDS : DEFAULT_TRIAL_SECONDS;
 
   const guest_id = uuidv4();
-  const expires_at = new Date(Date.now() + DEFAULT_TRIAL_SECONDS * 1000).toISOString();
+  const expires_at = new Date(Date.now() + trialSeconds * 1000).toISOString();
 
   // 1. Redis trial counter
   try {
-    await initTrial(guest_id, DEFAULT_TRIAL_SECONDS);
+    await initTrial(guest_id, trialSeconds);
   } catch (e) {
     logger.error("trial_init_failed", { e: String(e) });
   }
@@ -116,6 +100,7 @@ export async function POST(req: NextRequest) {
         user_agent: body.user_agent ?? req.headers.get("user-agent") ?? null,
         invite_code: body.invite_code ?? null,
         expires_at,
+        mode,
       });
     if (error) throw error;
   } catch (e) {
@@ -134,7 +119,7 @@ export async function POST(req: NextRequest) {
   const payload: GuestStartResponse = {
     guest_id,
     expires_at,
-    trial_seconds: DEFAULT_TRIAL_SECONDS,
+    trial_seconds: trialSeconds,
   };
 
   const res = NextResponse.json(payload, { status: 201 });
@@ -143,7 +128,7 @@ export async function POST(req: NextRequest) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: DEFAULT_TRIAL_SECONDS + 600, // trial + 10분 grace
+    maxAge: trialSeconds + 600, // trial + 10분 grace
   });
   return res;
 }

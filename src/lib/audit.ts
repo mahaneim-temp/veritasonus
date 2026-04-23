@@ -20,6 +20,8 @@ export type AuditAction =
   | "abuse_flag"
   | "data_delete"
   | "quota_override"
+  | "topup"
+  | "mock_topup"
   | "other";
 
 export type AuditTargetType =

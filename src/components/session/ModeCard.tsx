@@ -43,7 +43,7 @@ export function ModeCard({
 
   if (disabled) return <div aria-disabled>{content}</div>;
   return (
-    <Link href={href} aria-label={title}>
+    <Link href={href as never} aria-label={title}>
       {content}
     </Link>
   );

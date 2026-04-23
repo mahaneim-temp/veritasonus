@@ -11,6 +11,10 @@ export interface RealtimeClaims {
   owner_type: "guest" | "member";
   session_id: string;
   trial_remaining_s: number;
+  /** 회원의 유효 잔여 초 (free+purchased+granted). admin 은 24*3600 으로 클램프. */
+  effective_remaining_s: number;
+  /** true 이면 utterance DB 저장 skip (맛보기 trial). */
+  skip_persist?: boolean;
   /** STT 입력 언어 (ISO/BCP-47: "en", "ko" 등). gateway Provider 가 STT 구성에 사용. */
   source_lang: string;
   /** 번역 출력 언어. */

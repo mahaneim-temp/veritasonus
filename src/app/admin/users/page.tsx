@@ -12,6 +12,9 @@ interface Row {
   created_at: string;
   /** 이번 달(KST) 실제 차감 초수. */
   seconds_used_this_month: number;
+  wallet_free_remaining: number;
+  wallet_purchased: number;
+  wallet_granted: number;
 }
 interface Resp {
   items: Row[];
@@ -102,6 +105,7 @@ export default function AdminUsersPage() {
             <th>역할</th>
             <th>결제 상태</th>
             <th className="text-right">이번 달 사용</th>
+            <th className="text-right">지갑 잔액</th>
             <th>ID</th>
             <th className="text-right">액션</th>
           </tr>
@@ -125,6 +129,20 @@ export default function AdminUsersPage() {
               <td className="py-2 text-right font-mono tabular-nums">
                 {(r.seconds_used_this_month / 60).toFixed(1)}
                 <span className="ml-1 text-xs text-ink-muted">분</span>
+              </td>
+              <td className="py-2 text-right text-xs">
+                <span className="text-ink-muted">무료 </span>
+                <span className="font-mono">{Math.round((r.wallet_free_remaining ?? 0) / 60)}m</span>
+                {" "}
+                <span className="text-ink-muted">충전 </span>
+                <span className="font-mono">{Math.round((r.wallet_purchased ?? 0) / 60)}m</span>
+                {r.wallet_granted > 0 && (
+                  <>
+                    {" "}
+                    <span className="text-ink-muted">지급 </span>
+                    <span className="font-mono">{Math.round(r.wallet_granted / 60)}m</span>
+                  </>
+                )}
               </td>
               <td className="py-2 font-mono text-xs">{r.id.slice(0, 8)}…</td>
               <td className="py-2 text-right">
@@ -199,10 +217,8 @@ function CreditGrantModal({
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error?.message ?? "실패");
       setResult(
-        `${(j.actually_granted_seconds / 60).toFixed(1)}분 지급됨 ` +
-          `(이전 ${(j.prev_seconds_used / 60).toFixed(1)}분 → 현재 ${(
-            j.next_seconds_used / 60
-          ).toFixed(1)}분)`,
+        `${(j.grant_seconds / 60).toFixed(1)}분 지급됨. ` +
+          `지갑 지급분: ${(j.wallet_after.granted_seconds / 60).toFixed(1)}분`,
       );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "unknown");
@@ -224,14 +240,15 @@ function CreditGrantModal({
           대상: <span className="font-mono">{target.email}</span>
         </p>
         <p className="mt-2 text-xs text-ink-secondary">
-          이번 달 현재 사용량:{" "}
-          <strong className="text-ink-primary font-mono tabular-nums">
-            {(target.seconds_used_this_month / 60).toFixed(1)} 분
-          </strong>
+          지갑 현황:{" "}
+          <span className="font-mono tabular-nums text-ink-primary">
+            무료 {Math.round((target.wallet_free_remaining ?? 0) / 60)}분
+            {" / "}충전 {Math.round((target.wallet_purchased ?? 0) / 60)}분
+            {" / "}지급 {Math.round((target.wallet_granted ?? 0) / 60)}분
+          </span>
         </p>
-        <p className="mt-3 text-xs text-ink-secondary">
-          이번 달 사용량(usage_monthly.seconds_used)에서 아래 만큼 빼줍니다
-          (0 미만으로는 내려가지 않음). 모든 내역은 audit_log 에 기록됩니다.
+        <p className="mt-1 text-xs text-ink-secondary">
+          아래 분만큼 지갑의 지급(granted_seconds)에 추가합니다. 만료 없음.
         </p>
 
         <div className="mt-4 space-y-3 text-sm">

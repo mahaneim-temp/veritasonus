@@ -64,21 +64,12 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // 2.5) 회원가입 게이트 (상용 전환용, env 플래그로 토글).
-  //      REQUIRE_SIGNUP_FOR_TRIAL=true 일 때만 /start/* 를 비회원에게 차단.
-  //      기본(false) 은 비회원 체험 그대로 허용.
-  const requireSignup =
-    (process.env.REQUIRE_SIGNUP_FOR_TRIAL ?? "").trim().toLowerCase() ===
-    "true";
-  if (
-    requireSignup &&
-    !userId &&
-    (pathname.startsWith("/start") || pathname.startsWith("/session"))
-  ) {
+  // 2.5) 본서비스 로그인 필수 (hardcoded — /trial/* 은 예외)
+  const isMainService =
+    pathname.startsWith("/start") || pathname.startsWith("/session");
+  if (isMainService && !userId) {
     const next = encodeURIComponent(pathname + req.nextUrl.search);
-    return NextResponse.redirect(
-      new URL(`/signup?next=${next}`, req.url),
-    );
+    return NextResponse.redirect(new URL(`/login?next=${next}`, req.url));
   }
 
   // 3) 초대 코드 게이트 (베타)

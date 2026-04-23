@@ -19,7 +19,7 @@ import { z } from "zod";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseService } from "@/lib/supabase/service";
 import { audit } from "@/lib/audit";
-import { kstYyyymm } from "@/lib/billing/quota";
+import { adminGrantSeconds } from "@/lib/billing/wallet";
 import { logger } from "@/lib/utils/logger";
 
 export const runtime = "nodejs";
@@ -64,26 +64,9 @@ export async function POST(req: NextRequest) {
   }
   const { user_id, grant_seconds, reason } = parsed.data;
 
-  const svc = supabaseService();
-  const yyyymm = kstYyyymm();
-
   try {
-    // 현재 사용량 조회 → 차감할 new_value 계산.
-    const { data: existing } = await svc
-      .from("usage_monthly")
-      .select("seconds_used")
-      .eq("user_id", user_id)
-      .eq("yyyymm", yyyymm)
-      .maybeSingle();
-    const prev = Number(existing?.seconds_used ?? 0);
-    const next = Math.max(0, prev - grant_seconds);
-    const actuallyGranted = prev - next;
-
-    const { error: upErr } = await svc.from("usage_monthly").upsert(
-      { user_id, yyyymm, seconds_used: next },
-      { onConflict: "user_id,yyyymm" },
-    );
-    if (upErr) throw upErr;
+    const svc = supabaseService();
+    const updated = await adminGrantSeconds(svc, user_id, grant_seconds);
 
     await audit({
       actorId: admin.id,
@@ -92,22 +75,24 @@ export async function POST(req: NextRequest) {
       targetId: user_id,
       payload: {
         kind: "credit_grant",
-        yyyymm,
-        requested_seconds: grant_seconds,
-        actually_granted_seconds: actuallyGranted,
-        prev_seconds_used: prev,
-        next_seconds_used: next,
+        grant_seconds,
+        wallet_after: {
+          free_seconds_remaining: updated.free_seconds_remaining,
+          purchased_seconds: updated.purchased_seconds,
+          granted_seconds: updated.granted_seconds,
+        },
         reason,
       },
     });
 
     return NextResponse.json({
       ok: true,
-      yyyymm,
-      requested_seconds: grant_seconds,
-      actually_granted_seconds: actuallyGranted,
-      prev_seconds_used: prev,
-      next_seconds_used: next,
+      grant_seconds,
+      wallet_after: {
+        free_seconds_remaining: updated.free_seconds_remaining,
+        purchased_seconds: updated.purchased_seconds,
+        granted_seconds: updated.granted_seconds,
+      },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

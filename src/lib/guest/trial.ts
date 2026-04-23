@@ -27,6 +27,10 @@ function redis(): Redis | null {
 export const DEFAULT_TRIAL_SECONDS =
   Number(process.env.GUEST_TRIAL_SECONDS ?? 600) || 600;
 
+/** 홈페이지 1분 맛보기 체험 */
+export const TASTE_TRIAL_SECONDS =
+  Number(process.env.TASTE_TRIAL_SECONDS ?? 60) || 60;
+
 export const WARN_SECONDS =
   Number(process.env.GUEST_TRIAL_WARN_SECONDS ?? 120) || 120;
 
