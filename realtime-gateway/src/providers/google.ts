@@ -155,12 +155,18 @@ function supportsLatestLong(languageCode: string): boolean {
 
 function toBcp47(lang: string): string {
   const l = lang.toLowerCase();
-  if (l.includes("-")) return lang; // 이미 BCP-47
+  // 중국어 별칭(zh-CN, zh-TW, zh-HK) 도 Google 정규 코드로 재매핑 — Google STT 는
+  // zh-* 를 직접 수락하지 않는다 (공식 지원은 cmn-Hans-CN / cmn-Hant-TW / yue-Hant-HK).
+  if (l === "zh-cn" || l === "zh-hans" || l === "zh-hans-cn") return "cmn-Hans-CN";
+  if (l === "zh-tw" || l === "zh-hant" || l === "zh-hant-tw") return "cmn-Hant-TW";
+  if (l === "zh-hk" || l === "yue" || l === "yue-hk") return "yue-Hant-HK";
+  if (l.includes("-")) return lang; // 이미 BCP-47 (위에서 걸러지지 않은 정상 코드)
   const map: Record<string, string> = {
     ko: "ko-KR",
     en: "en-US",
     ja: "ja-JP",
-    zh: "zh-CN",
+    // 중국어는 Google 공식 지원이 cmn-Hans-CN (간체, 중국) — zh-CN 은 거부당한다.
+    zh: "cmn-Hans-CN",
     tl: "fil-PH", // Google STT 는 "tl" 을 직접 받지 않는다 — "fil-PH" 필수.
     es: "es-ES",
     fr: "fr-FR",
