@@ -131,6 +131,20 @@ export function useInterpretSession(opts: Options) {
   );
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const authWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * "이 연결이 충분히 안정적이다" 판정 타이머.
+   *
+   * 왜 필요:
+   *   WS open 직후 바로 backoff 를 리셋하면, 서버가 auth.ok 를 보낸 직후 provider 에러로
+   *   WS 를 닫는 시나리오에서 클라가 open→close→open 루프를 영원히 반복한다. 화면에는
+   *   "재연결 중" 만 반복 표시되고 원인을 알 수 없게 된다 (예: Google STT 가 미지원 언어에
+   *   latest_long 모델을 거부해 즉사하는 경우).
+   *
+   * 해법:
+   *   open 되면 이 타이머를 10 초 뒤 시작. 실제로 10 초를 버티면 그때서야 backoff reset.
+   *   10 초 안에 close 되면 reset 건너뛰기 → 3 회 시도 후 진짜 포기.
+   */
+  const stableConnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
   /** 세션이 live 로 전이된 wall-clock 시각(ms). utterance started_at_ms 계산 근거. */
   const liveStartedAtRef = useRef<number | null>(null);
@@ -387,6 +401,9 @@ export function useInterpretSession(opts: Options) {
       // 서버가 auth.hello 를 받고 auth.ok (또는 다른 메시지) 를 보내오는 데까지 감시.
       // 기한 내 무응답이면 연결을 닫아 재연결 루프에 합류시킨다.
       armAuthWatchdog(ws);
+      // 연결이 10초간 유지되면 backoff 리셋. open 즉시 리셋하지 않는 이유는
+      // clearStableConnTimer 주석 참조(서버가 auth.ok 직후 provider 오류로 닫는 시나리오 대비).
+      armStableConnTimer();
     };
 
     ws.onmessage = (ev) => {
@@ -426,6 +443,8 @@ export function useInterpretSession(opts: Options) {
       });
       stopHeartbeat();
       clearAuthWatchdog();
+      // 안정 연결 타이머 취소 — 10초 넘기지 못하고 끊겼다는 뜻이니 backoff 리셋은 스킵.
+      clearStableConnTimer();
       if (unmountedRef.current) return;
       // 정상 종료(1000) 또는 이미 ended 상태면 재연결 시도 안 함.
       const clean = closeEv.code === 1000 || stateSnapshotRef.current === "ended";
@@ -510,7 +529,10 @@ export function useInterpretSession(opts: Options) {
       ws.addEventListener(
         "open",
         () => {
-          backoffRef.current = resetBackoff();
+          // backoff 는 바로 리셋하지 않는다 — 10초 이상 연결이 유지되면 그때 리셋.
+          // 이렇게 해야 서버가 auth.ok 직후 provider 에러로 WS 를 닫는 시나리오(예: Google STT
+          // 미지원 언어에 latest_long 모델 거부)에서 무한 open/close 루프가 생기지 않는다.
+          armStableConnTimer();
           // 재연결 성공 → 이전 에러 배너 해소.
           setLastError(null);
           dispatch({ type: "ws_reconnected" });
@@ -541,6 +563,26 @@ export function useInterpretSession(opts: Options) {
       clearTimeout(tokenRefreshTimerRef.current);
       tokenRefreshTimerRef.current = null;
     }
+  }
+
+  function clearStableConnTimer() {
+    if (stableConnTimerRef.current) {
+      clearTimeout(stableConnTimerRef.current);
+      stableConnTimerRef.current = null;
+    }
+  }
+
+  /**
+   * 연결이 10초간 유지되면 backoff 카운터를 리셋.
+   * 중간에 close 되면 clearStableConnTimer 가 호출되어 리셋이 취소되고,
+   * 재연결 시도 카운터가 누적되므로 "무한 open/close 루프" 를 자연스럽게 종결시킨다.
+   */
+  function armStableConnTimer() {
+    clearStableConnTimer();
+    stableConnTimerRef.current = setTimeout(() => {
+      backoffRef.current = resetBackoff();
+      stableConnTimerRef.current = null;
+    }, 10_000);
   }
 
   // ── 공용 API ─────────────────────────────────────────────
@@ -640,12 +682,58 @@ export function useInterpretSession(opts: Options) {
   }
 
   function requestClarify(seq: number) {
+    // 기존: gateway 로 manual_clarify 명령 전송(서버 측 핸들러 없음 — dead path).
+    // 지금은 UI 가 CorrectionModal 을 열어 사용자 수정 텍스트를 받아 submitCorrection() 으로 저장한다.
+    // 이 함수는 하위 호환용(가드 시그널)으로 남기고, 클라리파이어는 페이지 쪽 상태로 관리.
     const cmd: ClientEvent = {
       type: "client.command",
       command: "manual_clarify",
       utterance_seq: seq,
     };
-    wsRef.current?.send(JSON.stringify(cmd));
+    try {
+      wsRef.current?.send(JSON.stringify(cmd));
+    } catch {
+      // 게이트웨이 미연결(종료 후 review 에서 수정) 케이스는 무시 — 저장은 REST 로 진행.
+    }
+  }
+
+  /**
+   * 사용자가 직접 입력한 수정 번역을 서버에 저장하고 로컬 state 의 corrected_text 를 갱신.
+   * 성공 시 수정된 row 를, 실패 시 에러 메시지를 반환.
+   */
+  async function submitCorrection(
+    seq: number,
+    correctedText: string,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    const body = correctedText.trim();
+    if (!body) return { ok: false, message: "수정문을 입력해 주세요" };
+    try {
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(opts.sessionId)}/utterances/${seq}`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ corrected_text: body }),
+        },
+      );
+      if (!res.ok) {
+        let msg = "수정 저장에 실패했어요";
+        try {
+          const data = (await res.json()) as {
+            error?: { message?: string };
+          };
+          if (data?.error?.message) msg = data.error.message;
+        } catch {
+          // 본문 파싱 실패는 기본 메시지 유지.
+        }
+        return { ok: false, message: msg };
+      }
+      setItems((prev) => upsert(prev, seq, { corrected_text: body }));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, message: `네트워크 오류: ${String(e)}` };
+    }
   }
 
   // transcript 임시 저장 — items 변경 시마다 localStorage 에 기록.
@@ -694,6 +782,7 @@ export function useInterpretSession(opts: Options) {
       clearReconnectTimer();
       clearTokenRefreshTimer();
       clearAuthWatchdog();
+      clearStableConnTimer();
       stopHeartbeat();
       closeWsSilently();
       micRef.current.stop();
@@ -711,6 +800,7 @@ export function useInterpretSession(opts: Options) {
     resume,
     end,
     requestClarify,
+    submitCorrection,
     /** 체험 잔여 초. 게스트 외에는 null. */
     trialRemaining,
     /** 체험 총 초 (env 기반, 고정). 사용/남은 계산의 분모. */

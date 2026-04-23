@@ -44,13 +44,36 @@ const TRIAL_TICK_MS = 5_000;
 const TRIAL_TICK_DECREMENT_S = 5;
 
 /**
- * 짧은 final 을 홀드할 최대 시간(ms). 이 창 내에 다음 final 이 오면 병합.
- * 너무 크면 실시간성 훼손, 너무 작으면 "네.", "예." 같은 조각 파편화.
- * 800ms 가 보통의 말 사이 쉼보다는 짧고 조각 응답 간격보다는 큰 경계값.
+ * 모드별 병합 정책.
+ *
+ * 설계 의도:
+ *   - interactive_interpretation (대화형): 상대방과 빠르게 주고받음. "네", "응" 같은
+ *     맞장구도 즉시 번역되어야 자연스러움 → 창 작게(300ms) + 임계 낮게(3자).
+ *   - listener_live / listener_live_recorded (청취/연설): 화자 한 명이 길게 말함.
+ *     "그리고", "어 근데" 같은 접속사 조각이 별도 발화로 튀지 않게 넉넉한 창(800ms) + 임계 6자.
+ *   - assist_interpretation: 사용자가 생각할 시간이 있으므로 중간값(500ms) + 4자.
+ *   - conversation_learning: listener 와 유사 (800/6).
+ *   - 기본(미지정 모드): 대화형 기본값.
  */
-const MERGE_WINDOW_MS = 800;
-/** 이 글자 수 이하면 "짧은 final" 로 간주해 병합 대상이 된다. */
-const MERGE_SHORT_CHAR_THRESHOLD = 6;
+interface MergeConfig {
+  windowMs: number;
+  shortCharThreshold: number;
+}
+
+function getMergeConfig(mode: string | undefined): MergeConfig {
+  switch (mode) {
+    case "listener_live":
+    case "listener_live_recorded":
+    case "conversation_learning":
+      return { windowMs: 800, shortCharThreshold: 6 };
+    case "assist_interpretation":
+      return { windowMs: 500, shortCharThreshold: 4 };
+    case "interactive_interpretation":
+    default:
+      // 대화 모드의 체감 속도 개선 — 이전엔 global 800ms 였던 값을 300ms 로 축소.
+      return { windowMs: 300, shortCharThreshold: 3 };
+  }
+}
 
 interface PendingShort {
   text: string;
@@ -80,6 +103,8 @@ interface SessionCtx {
   pendingShort: PendingShort | null;
   /** openProvider 가 주입. 세션 종료 직전 pending 짧은 조각을 단독 확정하는 훅. */
   flushPendingShort: () => void;
+  /** 모드별 세그먼트/병합 창 정책. JWT claims.mode 로 결정. */
+  mergeConfig: MergeConfig;
 }
 
 function flushPendingShortOnCtx(ctx: SessionCtx): void {
@@ -175,7 +200,16 @@ export async function handleConnection(
           flushPendingShort: () => {
             /* openProvider 가 덮어씀 */
           },
+          mergeConfig: getMergeConfig(claims.mode),
         };
+        log.info(
+          {
+            session: claims.session_id,
+            mode: claims.mode ?? "(none)",
+            merge: ctx.mergeConfig,
+          },
+          "merge_config_selected",
+        );
         log.info(
           { session: claims.session_id, owner: claims.owner_type },
           "auth_ok",
@@ -434,14 +468,15 @@ async function openProvider(
         }
 
         // 2) 현재 final 이 짧으면 다음 것 기다리며 버퍼에 보관.
-        if (body.length <= MERGE_SHORT_CHAR_THRESHOLD) {
+        //    모드별 창/임계값 — interactive_interpretation 은 짧게(300ms/3자), listener 는 넉넉(800ms/6자).
+        if (body.length <= ctx.mergeConfig.shortCharThreshold) {
           const timer = setTimeout(() => {
             // window 내에 이어지는 final 이 없었다 — 단독 확정.
             const p = ctx.pendingShort;
             if (!p) return;
             ctx.pendingShort = null;
             commitFinal(p.text, p.confidence);
-          }, MERGE_WINDOW_MS);
+          }, ctx.mergeConfig.windowMs);
           ctx.pendingShort = { text: body, confidence, timer };
           return;
         }

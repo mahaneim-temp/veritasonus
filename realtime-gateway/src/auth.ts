@@ -19,6 +19,11 @@ export interface RealtimeClaims {
   effective_remaining_s: number;
   /** true 이면 utterance DB 저장 skip (맛보기 trial). */
   skip_persist?: boolean;
+  /**
+   * 세션 모드. 병합/세그먼트 창 크기 결정에 사용.
+   * 레거시 토큰(필드 없음) 하위호환 → 기본값 'interactive_interpretation'.
+   */
+  mode?: string;
   iat: number;
   exp: number;
 }

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { SessionClock } from "@/components/session/SessionClock";
 import { SessionExitModal } from "@/components/session/SessionExitModal";
 import { ListenerConsentModal } from "@/components/listener/ConsentModal";
+import { CorrectionModal } from "@/components/session/CorrectionModal";
 import { useInterpretSession } from "@/hooks/useInterpretSession";
 import {
   useNavigationGuard,
@@ -62,6 +63,7 @@ export default function ListenerPage({
   const [started, setStarted] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const [pendingExit, setPendingExit] = useState<NavigationAttempt | null>(null);
+  const [correctionSeq, setCorrectionSeq] = useState<number | null>(null);
 
   const session = useInterpretSession({
     sessionId: id,
@@ -288,7 +290,10 @@ export default function ListenerPage({
         <div className="flex flex-col rounded-2xl border border-border-subtle bg-surface min-h-[60vh] overflow-hidden">
           <LiveTranscript
             items={session.items}
-            onClarify={session.requestClarify}
+            onClarify={(seq) => {
+              session.requestClarify(seq);
+              setCorrectionSeq(seq);
+            }}
             emptyHint={emptyHint}
           />
         </div>
@@ -332,6 +337,17 @@ export default function ListenerPage({
         onResume={session.resume}
         onEnd={session.end}
         onToggleMic={session.toggleMic}
+      />
+
+      <CorrectionModal
+        open={correctionSeq != null}
+        item={
+          correctionSeq != null
+            ? session.items.find((x) => x.seq === correctionSeq) ?? null
+            : null
+        }
+        onClose={() => setCorrectionSeq(null)}
+        onSubmit={session.submitCorrection}
       />
 
       <SessionExitModal

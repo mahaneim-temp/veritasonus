@@ -108,6 +108,51 @@ function translateClient(): translateV2.Translate {
  *   - cmn-Hans-CN / zh-CN 모두 허용 — 표준 중국어(간체)
  *   - yue-Hant-HK 광둥어, cmn-Hant-TW 대만화 등은 필요 시 별도 추가
  */
+/**
+ * Google STT 의 `latest_long` 모델이 공식 지원하는 BCP-47 코드 화이트리스트.
+ *
+ * 왜 필요한가:
+ *   latest_long 은 발화 길이가 긴 회의/연설용 고정밀 모델이지만, 주요 언어 외에는 제공되지 않는다.
+ *   미지원 언어(예: fil-PH, th-TH, hi-IN, vi-VN, id-ID, ar-SA)에 latest_long 을 강제하면
+ *   INVALID_ARGUMENT 로 스트림이 즉시 죽는다 → FATAL_PROVIDER_CODES 에 걸려 WS close →
+ *   클라이언트 재연결 루프. 화면에는 "재연결 중" 만 반복 표시되어 사용자는 원인을 알 수 없다.
+ *
+ * 전략:
+ *   - 화이트리스트에 있는 언어 → latest_long (품질 우선)
+ *   - 나머지 언어 → model 필드 생략, SDK 가 default 모델 선택 (호환성 우선)
+ *
+ * 참고(2024~2025 Google Cloud Speech v1/v1p1beta1 공개 지원 목록):
+ *   en-x, ko-KR, ja-JP, cmn-x / zh-x, es-x, fr-x, de-DE, pt-x, it-IT, ru-RU.
+ *   이외 언어는 Google 문서에 별도 명시가 없어 default 로 돌린다.
+ */
+const LATEST_LONG_SUPPORTED: ReadonlySet<string> = new Set([
+  "en-US",
+  "en-GB",
+  "en-AU",
+  "en-IN",
+  "en-CA",
+  "ko-KR",
+  "ja-JP",
+  "zh-CN",
+  "cmn-Hans-CN",
+  "cmn-Hant-TW",
+  "zh-TW",
+  "es-ES",
+  "es-US",
+  "es-MX",
+  "fr-FR",
+  "fr-CA",
+  "de-DE",
+  "pt-BR",
+  "pt-PT",
+  "it-IT",
+  "ru-RU",
+]);
+
+function supportsLatestLong(languageCode: string): boolean {
+  return LATEST_LONG_SUPPORTED.has(languageCode);
+}
+
 function toBcp47(lang: string): string {
   const l = lang.toLowerCase();
   if (l.includes("-")) return lang; // 이미 BCP-47
@@ -201,16 +246,22 @@ class GoogleSession implements ProviderHandle {
         sourceLang: this.opts.sourceLang,
         languageCode,
         targetLang: this.opts.targetLang,
+        model: supportsLatestLong(languageCode) ? "latest_long" : "default",
       },
       "google_stt_opening",
     );
+    const useLatestLong = supportsLatestLong(languageCode);
     const config: Record<string, unknown> = {
       encoding: "LINEAR16",
       sampleRateHertz: 16000,
       languageCode,
       enableAutomaticPunctuation: true,
-      model: "latest_long",
     };
+    // 지원 언어만 latest_long 주입. 미지원 언어(fil-PH, th-TH, hi-IN …) 에는 붙이지 않는다 —
+    // 붙이면 INVALID_ARGUMENT 로 즉시 스트림 사망 → 클라 재연결 루프.
+    if (useLatestLong) {
+      config["model"] = "latest_long";
+    }
     // Biasing: 파싱된 원고/용어집을 phrase hint 로 주입. boost 는 mild(10).
     if (this.biasPhrases.length > 0) {
       config["speechContexts"] = [

@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   const { data: srow } = await supabaseService()
     .from("sessions")
-    .select("owner_type,owner_id,state,source_lang,target_lang")
+    .select("owner_type,owner_id,state,source_lang,target_lang,mode")
     .eq("id", parsed.data.session_id)
     .maybeSingle();
   if (!srow) {
@@ -161,6 +161,9 @@ export async function POST(req: NextRequest) {
         skip_persist: false,
         source_lang: String(r.source_lang ?? "ko"),
         target_lang: String(r.target_lang ?? "en"),
+        // 세션 모드를 JWT 에 박아 gateway 가 모드별 세그먼트 정책을 적용할 수 있도록.
+        // 누락(null)이면 gateway 가 'interactive_interpretation' 기본값 사용.
+        mode: String(r.mode ?? "interactive_interpretation"),
       },
       Number(process.env.REALTIME_TOKEN_TTL_S ?? 900),
     );

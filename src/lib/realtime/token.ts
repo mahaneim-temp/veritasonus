@@ -19,6 +19,14 @@ export interface RealtimeClaims {
   source_lang: string;
   /** 번역 출력 언어. */
   target_lang: string;
+  /**
+   * 세션 모드. gateway 의 병합/세그먼트 창 크기 결정에 사용.
+   *   - interactive_interpretation: 짧게 끊어 빠르게 (대화형)
+   *   - listener_live / listener_live_recorded: 연설 톤, 창 크게
+   *   - assist_interpretation / conversation_learning: 중간
+   * 누락 시 gateway 가 'interactive_interpretation' 기본값으로 처리.
+   */
+  mode?: string;
   iat: number;
   exp: number;
 }

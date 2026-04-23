@@ -11,6 +11,7 @@ import { AssetUploader } from "@/components/assets/AssetUploader";
 import { Badge } from "@/components/ui/badge";
 import { SessionClock } from "@/components/session/SessionClock";
 import { SessionExitModal } from "@/components/session/SessionExitModal";
+import { CorrectionModal } from "@/components/session/CorrectionModal";
 import { useInterpretSession } from "@/hooks/useInterpretSession";
 import {
   useNavigationGuard,
@@ -34,6 +35,7 @@ export default function SessionPage({
   const [preflightOk, setPreflightOk] = useState(false);
   const [showCorrected, setShowCorrected] = useState(false);
   const [pendingExit, setPendingExit] = useState<NavigationAttempt | null>(null);
+  const [correctionSeq, setCorrectionSeq] = useState<number | null>(null);
 
   const session = useInterpretSession({
     sessionId: id,
@@ -142,7 +144,10 @@ export default function SessionPage({
         <div className="flex flex-col rounded-2xl border border-border-subtle bg-surface min-h-[60vh]">
           <LiveTranscript
             items={session.items}
-            onClarify={session.requestClarify}
+            onClarify={(seq) => {
+              session.requestClarify(seq);
+              setCorrectionSeq(seq);
+            }}
             showCorrected={showCorrected}
           />
         </div>
@@ -194,6 +199,17 @@ export default function SessionPage({
           router.push(`/session/${id}/review`);
         }}
         onToggleMic={session.toggleMic}
+      />
+
+      <CorrectionModal
+        open={correctionSeq != null}
+        item={
+          correctionSeq != null
+            ? session.items.find((x) => x.seq === correctionSeq) ?? null
+            : null
+        }
+        onClose={() => setCorrectionSeq(null)}
+        onSubmit={session.submitCorrection}
       />
 
       <SessionExitModal

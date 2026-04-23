@@ -57,12 +57,28 @@ export function UtteranceRow({ item, onClarify, showCorrected }: Props) {
           )}
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-wider text-ink-muted mb-1">
+          <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-ink-muted mb-1">
             번역
+            {item.corrected_text && (
+              <span className="rounded-full bg-primary/10 px-1.5 py-[1px] text-[10px] font-medium normal-case tracking-normal text-primary">
+                수정됨
+              </span>
+            )}
           </p>
-          <p className="text-sm text-ink-primary leading-relaxed">
-            {item.translated_text ?? "…"}
-          </p>
+          {item.corrected_text ? (
+            <>
+              <p className="text-sm text-ink-primary leading-relaxed">
+                {item.corrected_text}
+              </p>
+              <p className="mt-1 text-xs text-ink-muted line-through">
+                {item.translated_text ?? "…"}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-ink-primary leading-relaxed">
+              {item.translated_text ?? "…"}
+            </p>
+          )}
         </div>
       </div>
     </article>
