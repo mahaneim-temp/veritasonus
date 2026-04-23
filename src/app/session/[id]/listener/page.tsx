@@ -98,7 +98,13 @@ export default function ListenerPage({
     }
     setConsentOpen(false);
     setStarted(true);
-    await session.start();
+    try {
+      await session.start();
+    } catch {
+      // start() 실패 시 pre-start 화면으로 되돌려 사용자가 재시도 버튼/권한을 다시 확인할 수 있도록.
+      // (에러 배너는 session.lastErrorMessage 로 별도 렌더.)
+      setStarted(false);
+    }
   }
 
   // ── pre-start 화면 ──────────────────────────────────────────
@@ -113,6 +119,22 @@ export default function ListenerPage({
           현장 음성을 받아 실시간으로 번역합니다. 화자에게 재질문할 수 없는
           상황이므로, 신뢰도 낮은 구간은 <strong>검토 권장</strong>으로 표시됩니다.
         </p>
+        {session.lastErrorMessage && (
+          <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium">시작에 실패했어요</p>
+              <p className="mt-0.5 text-xs">{session.lastErrorMessage}</p>
+            </div>
+            <button
+              type="button"
+              onClick={session.clearLastError}
+              className="shrink-0 rounded-md px-2 py-0.5 text-xs text-danger/80 hover:bg-danger/10"
+            >
+              닫기
+            </button>
+          </div>
+        )}
         <ListenerSourcePicker value={source} onChange={setSource} />
         <div className="flex justify-end">
           <button
@@ -211,16 +233,46 @@ export default function ListenerPage({
       </div>
 
       {/* 에러 배너 */}
-      {session.lastError && (
+      {session.lastErrorMessage && (
         <div className="container mt-3">
           <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="flex-1">
-              <p className="font-medium">청취를 시작할 수 없어요</p>
-              <p className="mt-0.5 text-xs break-all">{session.lastError}</p>
-              <p className="mt-1 text-xs text-ink-secondary">
-                마이크/탭 오디오 권한을 확인한 뒤 페이지를 새로고침해 주세요.
+              <p className="font-medium">
+                {session.state === "ended" || session.state === "idle"
+                  ? "청취를 이어갈 수 없어요"
+                  : "연결이 불안정해요"}
               </p>
+              <p className="mt-0.5 text-xs">{session.lastErrorMessage}</p>
+              {(session.state === "ended" ||
+                session.state === "idle" ||
+                session.state === "preflight") && (
+                <p className="mt-1 text-xs text-ink-secondary">
+                  마이크/탭 오디오 권한을 확인한 뒤 다시 시도해 주세요.
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              {(session.state === "ended" ||
+                session.state === "idle" ||
+                session.state === "preflight") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void session.retry();
+                  }}
+                  className="rounded-md border border-danger/40 px-2 py-0.5 text-xs font-medium text-danger hover:bg-danger/10"
+                >
+                  다시 시도
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={session.clearLastError}
+                className="rounded-md px-2 py-0.5 text-xs text-danger/80 hover:bg-danger/10"
+              >
+                닫기
+              </button>
             </div>
           </div>
         </div>

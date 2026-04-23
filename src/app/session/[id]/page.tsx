@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertCircle } from "lucide-react";
 import { NetworkStatus } from "@/components/shell/NetworkStatus";
 import { LiveTranscript } from "@/components/session/LiveTranscript";
 import { ControlBar } from "@/components/session/ControlBar";
@@ -52,11 +53,32 @@ export default function SessionPage({
 
   if (!preflightOk) {
     return (
-      <div className="container max-w-2xl py-10">
+      <div className="container max-w-2xl py-10 space-y-5">
+        {session.lastErrorMessage && (
+          <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium">시작에 실패했어요</p>
+              <p className="mt-0.5 text-xs">{session.lastErrorMessage}</p>
+            </div>
+            <button
+              type="button"
+              onClick={session.clearLastError}
+              className="shrink-0 rounded-md px-2 py-0.5 text-xs text-danger/80 hover:bg-danger/10"
+            >
+              닫기
+            </button>
+          </div>
+        )}
         <PreflightCheck
           onReady={async () => {
             setPreflightOk(true);
-            await session.start();
+            try {
+              await session.start();
+            } catch {
+              // start() 실패 시 PreflightCheck 화면으로 돌려 재시도 가능하게.
+              setPreflightOk(false);
+            }
           }}
         />
       </div>
@@ -126,9 +148,37 @@ export default function SessionPage({
         </div>
         <aside className="space-y-4">
           <AssetUploader sessionId={id} />
-          {session.lastError && (
-            <div className="rounded-2xl border border-danger/30 bg-danger/5 p-4 text-sm text-danger">
-              {session.lastError}
+          {session.lastErrorMessage && (
+            <div className="flex items-start gap-2 rounded-2xl border border-danger/30 bg-danger/5 p-4 text-sm text-danger">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium">
+                  {session.state === "ended"
+                    ? "세션을 이어갈 수 없어요"
+                    : "연결이 불안정해요"}
+                </p>
+                <p className="mt-0.5 text-xs">{session.lastErrorMessage}</p>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                {session.state === "ended" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void session.retry();
+                    }}
+                    className="rounded-md border border-danger/40 px-2 py-0.5 text-xs font-medium text-danger hover:bg-danger/10"
+                  >
+                    다시 시도
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={session.clearLastError}
+                  className="rounded-md px-2 py-0.5 text-xs text-danger/80 hover:bg-danger/10"
+                >
+                  닫기
+                </button>
+              </div>
             </div>
           )}
         </aside>

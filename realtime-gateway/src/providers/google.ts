@@ -120,6 +120,12 @@ class GoogleSession implements ProviderHandle {
   private lastFinalSeq = 0;
   /** 파싱된 자료에서 뽑은 biasing phrases. open() 에서 1회 계산 후 재시작 때마다 재사용. */
   private biasPhrases: string[] = [];
+  /** 첫 오디오 byte 수신 여부 — 관측/진단용 로그 1회만 찍는다. */
+  private loggedFirstAudio = false;
+  /** 첫 STT final 결과 수신 여부 — 관측/진단용 로그 1회만. */
+  private loggedFirstFinal = false;
+  /** 연속 write 실패 회수 — 임계값 초과 시 fatal 로 상향. */
+  private writeFailCount = 0;
 
   constructor(private readonly opts: ProviderStartOptions) {}
 
@@ -218,6 +224,13 @@ class GoogleSession implements ProviderHandle {
       }
 
       // final → 원문만 emit. 번역은 세션 핸들러가 병합 판단 후 translate() 로 별도 호출.
+      if (!this.loggedFirstFinal) {
+        this.loggedFirstFinal = true;
+        this.opts.log.info(
+          { session: this.opts.sessionId, first_text_preview: text.slice(0, 40) },
+          "google_stt_first_final",
+        );
+      }
       const confidence = result.alternatives[0].confidence ?? null;
       this.opts.emit.onSourceFinal(text, confidence);
       this.lastFinalSeq += 1;
@@ -266,10 +279,33 @@ class GoogleSession implements ProviderHandle {
   sendAudio(chunk: Buffer): void {
     const s = this.stream;
     if (!s) return;
+    if (!this.loggedFirstAudio) {
+      this.loggedFirstAudio = true;
+      this.opts.log.info(
+        { session: this.opts.sessionId, bytes: chunk.length },
+        "google_stt_first_audio",
+      );
+    }
     try {
       s.write(chunk);
+      // write 성공 → 실패 카운터 리셋.
+      if (this.writeFailCount > 0) this.writeFailCount = 0;
     } catch (e) {
-      this.opts.log.warn({ err: String(e) }, "google_stt_write_failed");
+      this.writeFailCount += 1;
+      this.opts.log.warn(
+        { err: String(e), failCount: this.writeFailCount },
+        "google_stt_write_failed",
+      );
+      // 연속 3회 실패면 스트림이 사실상 죽은 것. onError 를 올려 세션 핸들러가
+      // FATAL 처리(WS close → 클라 재연결) 하도록 한다.
+      if (this.writeFailCount >= 3) {
+        this.writeFailCount = 0; // 중복 방출 방지.
+        try {
+          this.opts.emit.onError("google_stt_write_failed", String(e));
+        } catch {
+          // ignore
+        }
+      }
     }
   }
 

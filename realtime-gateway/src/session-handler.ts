@@ -102,6 +102,17 @@ function langsFromClaims(claims: RealtimeClaims): {
   };
 }
 
+/**
+ * Provider 에러 코드 중 "명확히 치명적" 인 것들.
+ * onError 로 이 코드가 들어오면 WS 를 닫아 클라이언트 재연결 루프에 합류시킨다.
+ * (그 외 에러는 "retriable:true" 만 내려보내고 연결은 유지 — 스트림이 스스로 회복할 여지.)
+ */
+const FATAL_PROVIDER_CODES = new Set<string>([
+  "google_stt_error",
+  "google_stt_write_failed",
+  "openai_realtime_error",
+]);
+
 export async function handleConnection(
   ws: WSClient,
   _req: IncomingMessage,
@@ -109,6 +120,8 @@ export async function handleConnection(
   const connId = uuidv4();
   const log = logger.child({ connId });
   let ctx: SessionCtx | null = null;
+  /** 같은 연결에서 여러 번 fatal close 를 트리거하지 않기 위한 가드. */
+  let closedDueToFatal = false;
 
   const authDeadline = setTimeout(() => {
     if (!ctx) {
@@ -168,7 +181,48 @@ export async function handleConnection(
           "auth_ok",
         );
         emitToClient({ type: "auth.ok" });
-        await openProvider(ctx, emitToClient, log);
+        const closeOnFatal = (code: string, reason: string) => {
+          if (closedDueToFatal) return;
+          closedDueToFatal = true;
+          log.warn(
+            { code, reason, session: ctx?.claims.session_id },
+            "fatal_close_triggered",
+          );
+          try {
+            ws.close(1011, code);
+          } catch {
+            // ignore
+          }
+        };
+        try {
+          await openProvider(ctx, emitToClient, log, closeOnFatal);
+          log.info(
+            { session: claims.session_id, provider: ctx.provider ? "ready" : "null" },
+            "provider_ready",
+          );
+        } catch (provErr) {
+          // Provider 초기화 실패 (STT 클라이언트 생성 실패, 인증 오류 등) — 좀비 WS 로 남기지 않는다.
+          log.error(
+            { err: String(provErr), session: claims.session_id },
+            "provider_init_failed",
+          );
+          try {
+            emitToClient({
+              type: "error",
+              code: "provider_init_failed",
+              message: String(provErr),
+              retriable: true,
+            });
+          } catch {
+            // ignore
+          }
+          try {
+            ws.close(1011, "provider_init_failed");
+          } catch {
+            // ignore
+          }
+          return;
+        }
         startTrialTimer(ctx, ws, log);
         await markSessionState(claims.session_id, "live");
       } catch (e) {
@@ -281,6 +335,7 @@ async function openProvider(
   ctx: SessionCtx,
   emitToClient: (obj: Record<string, unknown>) => void,
   log: PinoLogger,
+  closeOnFatal: (code: string, reason: string) => void,
 ): Promise<void> {
   const provider = selectProvider();
   log.info({ provider: provider.name }, "provider_selected");
@@ -434,6 +489,11 @@ async function openProvider(
           message,
           retriable: true,
         });
+        // Fatal 코드면 WS 를 닫아 클라이언트 재연결 루프로 합류시킨다.
+        // 과거엔 WS 를 살려두고 배너만 띄워 프로바이더가 죽은 채 "살아있는 척" 하는 좀비 상태가 발생했다.
+        if (FATAL_PROVIDER_CODES.has(code)) {
+          closeOnFatal(code, "fatal_provider_error");
+        }
       },
     },
   });

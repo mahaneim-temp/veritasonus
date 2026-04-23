@@ -52,6 +52,12 @@ import { useMicrophone } from "./useMicrophone";
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
 
+/**
+ * WS 가 열린 뒤 서버로부터 첫 메시지(auth.ok 등)가 이 시간 안에 오지 않으면 좀비로 간주하고
+ * 강제로 닫아 재연결 사이클을 돌린다. Google STT 가 내부 에러로 첫 byte 도 밀어내지 못하는 경우를 잡음.
+ */
+const AUTH_WATCHDOG_MS = 8_000;
+
 /** 체험 총 시간(초). 서버 GUEST_TRIAL_SECONDS 와 일치해야 함. */
 const TRIAL_TOTAL_SEC =
   Number(process.env["NEXT_PUBLIC_GUEST_TRIAL_SECONDS"]) || 600;
@@ -59,6 +65,35 @@ const TRIAL_TOTAL_SEC =
 /** transcript 임시 저장용 localStorage 키 + 만료 (24시간). */
 const TRANSCRIPT_STORAGE_PREFIX = "lucid-transcript-";
 const TRANSCRIPT_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 에러 코드 → 사용자에게 보여줄 한국어 메시지.
+ * 코드 키가 맵에 없으면 원문(짧게 자른) 그대로 노출.
+ *
+ * 설계: raw 코드(ex: "gateway_error", "google_stt_error")를 사용자에게 그대로 던지지 않는다.
+ *   — "gateway_error" 같은 영단어는 겁만 주고 정보는 없다. 대신 "재연결 중"·"음성 인식 일시 오류"
+ *     처럼 "상황 + 다음 행동" 을 설명한다.
+ */
+const ERROR_MESSAGES: Record<string, string> = {
+  gateway_error: "게이트웨이 연결이 불안정해요. 자동으로 다시 연결하고 있어요.",
+  google_stt_error: "음성 인식 서버에 일시적 문제가 있어 다시 연결하고 있어요.",
+  token_failed: "세션 인증 토큰을 받지 못했어요. 로그인 상태를 확인해 주세요.",
+  token_refresh_failed: "세션 토큰 갱신에 실패했어요. 연결이 곧 끊길 수 있어요.",
+  reconnect_failed: "재연결에 실패했어요. 잠시 뒤 다시 시도해 주세요.",
+  reconnect_gave_up: "자동 재연결을 포기했어요. 새로고침하거나 다시 시도해 주세요.",
+  auth_watchdog: "서버 응답이 없어 다시 연결하고 있어요.",
+  heartbeat_timeout: "네트워크 응답이 느려 연결을 재설정하고 있어요.",
+  server_retry: "서버가 세션 재시작을 요청했어요. 다시 연결하고 있어요.",
+  unknown: "연결 중 알 수 없는 오류가 발생했어요.",
+};
+
+export function humanizeSessionError(raw: string | null): string | null {
+  if (!raw) return null;
+  const mapped = ERROR_MESSAGES[raw];
+  if (mapped) return mapped;
+  // unknown code — 너무 길면 잘라서 보여준다.
+  return raw.length > 80 ? raw.slice(0, 80) + "…" : raw;
+}
 
 interface Options {
   sessionId: string;
@@ -94,6 +129,7 @@ export function useInterpretSession(opts: Options) {
     null,
   );
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const authWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
   /** 세션이 live 로 전이된 wall-clock 시각(ms). utterance started_at_ms 계산 근거. */
   const liveStartedAtRef = useRef<number | null>(null);
@@ -222,8 +258,21 @@ export function useInterpretSession(opts: Options) {
           // 서버가 새 토큰을 수락. 별도 처리 불필요.
           return;
         case "error":
-          setLastError(ev.message);
-          if (!ev.retriable) dispatch({ type: "end", reason: "error" });
+          // 서버가 보내 준 원인 코드를 저장하고, UI 는 humanizeSessionError 로 친화 문구를 만든다.
+          // 서버 관점에서는 code 쪽이 "영문 키" 라 쓸만하고, message 는 raw 에러 문자열이라
+          // 사용자에게 그대로 보이기엔 부적절 — 우선순위: code > message > "unknown".
+          setLastError(ev.code || ev.message || "unknown");
+          if (ev.retriable) {
+            // 재시도 가능 에러는 WS 를 닫아 재연결 루프로 합류시킨다.
+            // (과거엔 WS 를 살려둔 채 배너만 띄워, 프로바이더 좀비 상태에서 아무 일도 안 일어났다.)
+            try {
+              wsRef.current?.close(4005, "server_retry");
+            } catch {
+              // ignore
+            }
+          } else {
+            dispatch({ type: "end", reason: "error" });
+          }
           return;
         default:
           return;
@@ -335,9 +384,14 @@ export function useInterpretSession(opts: Options) {
       const hello: ClientEvent = { type: "auth.hello", token };
       ws.send(JSON.stringify(hello));
       startHeartbeat();
+      // 서버가 auth.hello 를 받고 auth.ok (또는 다른 메시지) 를 보내오는 데까지 감시.
+      // 기한 내 무응답이면 연결을 닫아 재연결 루프에 합류시킨다.
+      armAuthWatchdog(ws);
     };
 
     ws.onmessage = (ev) => {
+      // 서버로부터 첫 메시지 수신 → 응답 채널 살아있음. 워치독 해제.
+      clearAuthWatchdog();
       if (typeof ev.data === "string") {
         try {
           const parsed = JSON.parse(ev.data) as ServerEvent;
@@ -349,11 +403,14 @@ export function useInterpretSession(opts: Options) {
     };
 
     ws.onerror = () => {
-      setLastError("gateway_error");
+      // 주의: ws.onerror 는 종종 onclose 직전에 발화한다. 여기서 raw 코드를 사용자에게
+      // 노출하지 않는다 — onclose 쪽에서 일관된 재연결 루틴이 맡는다.
+      // (과거엔 여기서 setLastError("gateway_error") 를 던져 배너를 오염시켰다.)
     };
 
     ws.onclose = (closeEv) => {
       stopHeartbeat();
+      clearAuthWatchdog();
       if (unmountedRef.current) return;
       // 정상 종료(1000) 또는 이미 ended 상태면 재연결 시도 안 함.
       const clean = closeEv.code === 1000 || stateSnapshotRef.current === "ended";
@@ -365,6 +422,27 @@ export function useInterpretSession(opts: Options) {
     };
 
     return ws;
+  }
+
+  function armAuthWatchdog(ws: WebSocket) {
+    clearAuthWatchdog();
+    authWatchdogRef.current = setTimeout(() => {
+      // 응답 없음. setLastError 는 ws_disconnected 경로에서 굳이 필요 없지만,
+      // "auth_watchdog" 코드를 저장해 두면 humanize 후 UI 에 원인을 명확히 보여줄 수 있다.
+      setLastError("auth_watchdog");
+      try {
+        ws.close(4006, "auth_watchdog");
+      } catch {
+        // ignore
+      }
+    }, AUTH_WATCHDOG_MS);
+  }
+
+  function clearAuthWatchdog() {
+    if (authWatchdogRef.current) {
+      clearTimeout(authWatchdogRef.current);
+      authWatchdogRef.current = null;
+    }
   }
 
   // 최신 state 를 ref 로 보관 (onclose 콜백에서 참조).
@@ -393,6 +471,8 @@ export function useInterpretSession(opts: Options) {
     const { delayMs, next } = planNextAttempt(backoffRef.current);
     backoffRef.current = next;
     if (delayMs === null) {
+      // 재연결 3회 모두 실패. 사용자에게 터미널 에러 메시지 한 번 더 명확히.
+      setLastError("reconnect_gave_up");
       dispatch({ type: "reconnect_gave_up" });
       return;
     }
@@ -416,6 +496,8 @@ export function useInterpretSession(opts: Options) {
         "open",
         () => {
           backoffRef.current = resetBackoff();
+          // 재연결 성공 → 이전 에러 배너 해소.
+          setLastError(null);
           dispatch({ type: "ws_reconnected" });
           // paused 상태였으면 mic 재시작하지 않고 유지. live 였으면 start.
           if (ctxRef.current.reconnectReturnTo === "live") {
@@ -425,7 +507,9 @@ export function useInterpretSession(opts: Options) {
         { once: true },
       );
     } catch (e) {
-      setLastError(e instanceof Error ? e.message : "reconnect_failed");
+      setLastError(
+        e instanceof Error && e.message ? e.message : "reconnect_failed",
+      );
       scheduleReconnect();
     }
   }
@@ -463,9 +547,39 @@ export function useInterpretSession(opts: Options) {
       dispatch({ type: "preflight_ok" });
       dispatch({ type: "start_quick" });
     } catch (e) {
-      setLastError(e instanceof Error ? e.message : "unknown");
+      // 실패 원인은 lastError 로 남기되, 호출자가 "시작 실패" 를 감지해 로컬 UI 상태
+      // (예: 리스너 페이지의 started=true) 를 되돌릴 수 있도록 re-throw.
+      const code = e instanceof Error && e.message ? e.message : "unknown";
+      setLastError(code);
       mic.stop();
+      closeWsSilently();
+      throw e instanceof Error ? e : new Error(code);
     }
+  }
+
+  /** 사용자가 배너에서 "닫기" 를 눌렀을 때. */
+  function clearLastError() {
+    setLastError(null);
+  }
+
+  /**
+   * 사용자가 배너에서 "다시 시도" 를 눌렀을 때.
+   * 아직 라이브 중이면 무의미 — 자동 재연결 루프에 맡긴다. 종료 상태면 start() 재시도.
+   */
+  async function retry() {
+    if (
+      stateSnapshotRef.current === "live" ||
+      stateSnapshotRef.current === "paused" ||
+      stateSnapshotRef.current === "reconnecting"
+    ) {
+      return;
+    }
+    // 백오프 상태 리셋 + 미연결 타이머/소켓 정리.
+    backoffRef.current = resetBackoff();
+    clearReconnectTimer();
+    clearTokenRefreshTimer();
+    closeWsSilently();
+    await start();
   }
 
   function pause() {
@@ -547,6 +661,7 @@ export function useInterpretSession(opts: Options) {
       unmountedRef.current = true;
       clearReconnectTimer();
       clearTokenRefreshTimer();
+      clearAuthWatchdog();
       stopHeartbeat();
       closeWsSilently();
       micRef.current.stop();
@@ -575,7 +690,18 @@ export function useInterpretSession(opts: Options) {
         : null,
     /** 세션 시작(live 진입) 이후 wall-clock 경과 초. pause 중에도 흐름. */
     sessionElapsedSec,
+    /** 원인 코드(영문 키) 또는 짧은 영문 에러 문자열. UI 는 lastErrorMessage 를 쓰는 것이 권장. */
     lastError,
+    /** 사용자에게 보여주는 한국어 친화 메시지(null 이면 에러 없음). */
+    lastErrorMessage: humanizeSessionError(lastError),
+    /** 에러 배너 "닫기" 핸들러. */
+    clearLastError,
+    /**
+     * 에러 배너 "다시 시도" 핸들러.
+     * 세션이 live/paused/reconnecting 이면 no-op (자동 재연결 루프가 맡음).
+     * 그 외 상태에서는 start() 재시도.
+     */
+    retry,
     rttLevel,
   };
 }
