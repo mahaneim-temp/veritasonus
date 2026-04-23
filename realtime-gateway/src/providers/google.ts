@@ -46,6 +46,43 @@ type SttStream = {
 
 const STREAM_RESTART_MS = 4 * 60 * 1000 + 50 * 1000; // 4:50 — Google 5분 제한 여유분
 
+/**
+ * 부분 결과(speech_partial) 를 클라로 중계할 최소 stability 임계값.
+ *
+ * 배경:
+ *   Google STT 는 interim 결과의 "이 추정이 바뀌지 않을 확률"을 stability(0.0~1.0) 필드로 준다.
+ *   필터 없이 전부 forward 하면 빠른 말(특히 뉴스 낭독, 중국어/영어/일본어) 에서
+ *   "오늘은 → 그제는 → 그제 비가" 식 재해석 갱신이 그대로 화면에 깜빡임으로 보인다.
+ *
+ *   stability < 0.5 는 Google 내부가 곧 뒤집을 확률이 높은 "초기 추정" — 이걸 막으면
+ *   화면은 조금 덜 반응적으로 보여도 깜빡임/되돌림 현상이 거의 사라진다. 언어 무관.
+ *
+ *   이 임계값은 forward 에만 적용되며, 내부 state(fullPartialText) 는 stability 와 무관하게 계속 추적한다
+ *   — soft-final 타이머가 누적 텍스트로 커밋을 결정하기 때문.
+ */
+const PARTIAL_STABILITY_MIN = 0.5;
+
+/**
+ * isFinal 없이 partial 만 흘러오는 시간이 이 값을 넘으면 현재까지의 partial 을 "soft-final" 로 강제 커밋.
+ *
+ * 왜 필요:
+ *   Google 의 endpoint 감지는 "호흡 수준의 무음" 을 기준으로 작동. 빠른 연속 발화(뉴스 낭독 등) 에서는
+ *   10~20 초간 isFinal 이 안 나올 수 있다. 현 구조상 commitFinal → translate 는 isFinal 에서만 호출되므로,
+ *   isFinal 이 늦으면 번역도 함께 밀려 "문장만 쌓이고 번역이 안 된다" 는 체감 증상으로 나타남. 언어 무관.
+ *
+ *   4 초 정도면 짧은 단위로 끊어 번역을 흘려보낼 수 있고, 너무 짧지 않아 자연스러운 호흡이 잡히면
+ *   그 호흡에서 진짜 isFinal 이 먼저 나오게 된다.
+ */
+const SOFT_FINAL_AFTER_MS = 4000;
+
+/**
+ * soft-final 로 커밋할 때, 아직 커밋되지 않은 delta 가 이 글자 수 이상이어야 commit.
+ *
+ * 너무 짧으면(한두 글자) 한글/일본어의 조사·어미만 쪼개져 번역 품질이 망가진다.
+ * 세션 핸들러의 merge 버퍼(3~6자) 와 겹치지 않도록 그보다 살짝 높게.
+ */
+const SOFT_FINAL_MIN_DELTA_CHARS = 4;
+
 let _sttClient: SpeechClient | null = null;
 let _translateClient: translateV2.Translate | null = null;
 let _sb: SupabaseClient<Database> | null = null;
@@ -196,6 +233,17 @@ class GoogleSession implements ProviderHandle {
   private loggedFirstFinal = false;
   /** 연속 write 실패 회수 — 임계값 초과 시 fatal 로 상향. */
   private writeFailCount = 0;
+  /**
+   * 이미 onSourceFinal 로 커밋된 partial 의 전체-텍스트 상태(Google 이 준 raw 누적 텍스트 기준).
+   * 다음 partial/real-final 의 rawText 에서 이 prefix 를 잘라낸 "delta" 만 emit 해야 중복이 없다.
+   * real-final 이 도착하면 "" 로 리셋.
+   */
+  private committedPrefix = "";
+  /**
+   * 마지막 commit(soft/real) 이 이루어진 wall-clock 시각(ms).
+   * 긴 연속 발화에서 SOFT_FINAL_AFTER_MS 를 넘겼는지 판단.
+   */
+  private lastCommitMs = 0;
 
   constructor(private readonly opts: ProviderStartOptions) {}
 
@@ -244,6 +292,10 @@ class GoogleSession implements ProviderHandle {
 
   private openStream(): void {
     if (this.closed) return;
+    // 스트림을 새로 열 때마다 partial 누적 상태 리셋 — 직전 스트림 말미의 jank 를 가져오지 않는다.
+    // (lastFinalSeq 는 세션 전역이라 유지. 아래 두 값은 stream-local.)
+    this.committedPrefix = "";
+    this.lastCommitMs = Date.now();
     const languageCode = toBcp47(this.opts.sourceLang);
     // 매핑 결과를 로그로 남긴다 — 추후 언어 추가 시 "음성 안 먹음" 증상을 빠르게 진단.
     this.opts.log.info(
@@ -296,29 +348,99 @@ class GoogleSession implements ProviderHandle {
       const data = dataArg as GoogleSttResponse;
       const result = data?.results?.[0];
       if (!result || !result.alternatives?.[0]) return;
-      const text = result.alternatives[0].transcript ?? "";
-      if (!text.trim()) return;
+      const rawText = (result.alternatives[0].transcript ?? "").trim();
+      if (!rawText) return;
 
       if (!result.isFinal) {
-        // partial — 클라이언트에 흘려보내기만.
-        this.opts.emit.emitRaw({
-          type: "speech_partial",
-          seq: this.lastFinalSeq + 1,
-          text,
-        });
+        // ── 1) 이미 soft-final 로 커밋한 prefix 는 잘라내 delta 만 다룬다. ──
+        //      Google partial 은 isFinal 이후 새 utterance 를 시작할 때까지 누적되는
+        //      "현재 utterance 의 전체 텍스트" 이기 때문.
+        let deltaText = rawText;
+        if (
+          this.committedPrefix &&
+          rawText.startsWith(this.committedPrefix)
+        ) {
+          deltaText = rawText.slice(this.committedPrefix.length).trim();
+        }
+        if (!deltaText) return;
+
+        // ── 2) 클라로 forward 는 stability 이상일 때만. 깜빡임 방지(언어 무관). ──
+        const stability = result.stability ?? 1;
+        if (stability >= PARTIAL_STABILITY_MIN) {
+          this.opts.emit.emitRaw({
+            type: "speech_partial",
+            seq: this.lastFinalSeq + 1,
+            text: deltaText,
+          });
+        }
+
+        // ── 3) soft-final: 너무 오래 isFinal 이 안 나오면 현재까지의 delta 를 강제 커밋. ──
+        //      언어마다 Google endpoint 감도가 달라 빠른 뉴스 낭독에서는 수십 초간 isFinal 미발생
+        //      → 번역이 전혀 트리거되지 않는 현상. 4초 타임박스로 bound.
+        if (this.lastCommitMs === 0) this.lastCommitMs = Date.now();
+        const now = Date.now();
+        if (
+          deltaText.length >= SOFT_FINAL_MIN_DELTA_CHARS &&
+          now - this.lastCommitMs >= SOFT_FINAL_AFTER_MS
+        ) {
+          this.opts.log.info(
+            {
+              session: this.opts.sessionId,
+              chars: deltaText.length,
+              age_ms: now - this.lastCommitMs,
+              preview: deltaText.slice(0, 40),
+            },
+            "google_stt_soft_final_commit",
+          );
+          if (!this.loggedFirstFinal) {
+            this.loggedFirstFinal = true;
+            this.opts.log.info(
+              {
+                session: this.opts.sessionId,
+                first_text_preview: deltaText.slice(0, 40),
+                kind: "soft",
+              },
+              "google_stt_first_final",
+            );
+          }
+          // confidence 는 partial 단계라 신뢰 불가 → null. downstream 은 null 을 "high" 로 처리.
+          this.opts.emit.onSourceFinal(deltaText, null);
+          this.lastFinalSeq += 1;
+          // 전체-텍스트 기준으로 committedPrefix 갱신. 다음 partial 부터는 이 뒤만 delta 로 취급.
+          this.committedPrefix = rawText;
+          this.lastCommitMs = now;
+        }
         return;
       }
 
-      // final → 원문만 emit. 번역은 세션 핸들러가 병합 판단 후 translate() 로 별도 호출.
+      // ── isFinal=true : Google 이 endpoint 를 감지해 확정. ──
+      // soft-final 로 이미 커밋한 부분이 있으면 잘라내고 delta 만 커밋.
+      let finalDelta = rawText;
+      if (this.committedPrefix && rawText.startsWith(this.committedPrefix)) {
+        finalDelta = rawText.slice(this.committedPrefix.length).trim();
+      }
+      // utterance 경계 → 누적 상태 리셋.
+      this.committedPrefix = "";
+      this.lastCommitMs = Date.now();
+
+      if (!finalDelta) {
+        // 모든 텍스트가 이미 soft-final 로 커밋됨 — 중복 방지를 위해 생략.
+        return;
+      }
+
       if (!this.loggedFirstFinal) {
         this.loggedFirstFinal = true;
         this.opts.log.info(
-          { session: this.opts.sessionId, first_text_preview: text.slice(0, 40) },
+          {
+            session: this.opts.sessionId,
+            first_text_preview: finalDelta.slice(0, 40),
+            kind: "real",
+          },
           "google_stt_first_final",
         );
       }
       const confidence = result.alternatives[0].confidence ?? null;
-      this.opts.emit.onSourceFinal(text, confidence);
+      this.opts.emit.onSourceFinal(finalDelta, confidence);
       this.lastFinalSeq += 1;
     });
 
@@ -434,6 +556,8 @@ class GoogleSession implements ProviderHandle {
 interface GoogleSttResponse {
   results?: Array<{
     isFinal?: boolean;
+    /** interim 결과에 한해 제공. "이 추정이 바뀌지 않을 확률" (0.0~1.0). */
+    stability?: number;
     alternatives?: Array<{
       transcript?: string;
       confidence?: number;
