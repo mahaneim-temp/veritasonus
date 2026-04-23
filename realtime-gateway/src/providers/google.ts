@@ -97,7 +97,17 @@ function translateClient(): translateV2.Translate {
   return _translateClient;
 }
 
-/** 'ko' → 'ko-KR' 등. Google STT 는 BCP-47 요구. */
+/**
+ * 'ko' → 'ko-KR' 등. Google Cloud STT 는 BCP-47 요구.
+ * 주의: LANGS SSOT(src/lib/constants/languages.ts) 와 동기화 필수.
+ *   SSOT 에 새 언어 추가 시 반드시 여기에도 매핑 추가.
+ *   매핑 누락 시 Google STT 가 raw 코드 (예: "tl") 받고 조용히 실패 → 음성이 먹통처럼 보이는 버그.
+ *
+ * Google STT 공식 지원 BCP-47 (2025 기준, 주요):
+ *   - fil-PH (타갈로그/필리핀어) — Google 은 "tl" 미지원, "fil-PH" 만 수락
+ *   - cmn-Hans-CN / zh-CN 모두 허용 — 표준 중국어(간체)
+ *   - yue-Hant-HK 광둥어, cmn-Hant-TW 대만화 등은 필요 시 별도 추가
+ */
 function toBcp47(lang: string): string {
   const l = lang.toLowerCase();
   if (l.includes("-")) return lang; // 이미 BCP-47
@@ -106,9 +116,18 @@ function toBcp47(lang: string): string {
     en: "en-US",
     ja: "ja-JP",
     zh: "zh-CN",
+    tl: "fil-PH", // Google STT 는 "tl" 을 직접 받지 않는다 — "fil-PH" 필수.
     es: "es-ES",
     fr: "fr-FR",
     de: "de-DE",
+    id: "id-ID",
+    vi: "vi-VN",
+    th: "th-TH",
+    pt: "pt-BR",
+    ru: "ru-RU",
+    hi: "hi-IN",
+    ar: "ar-SA",
+    it: "it-IT",
   };
   return map[l] ?? lang;
 }
@@ -175,6 +194,16 @@ class GoogleSession implements ProviderHandle {
   private openStream(): void {
     if (this.closed) return;
     const languageCode = toBcp47(this.opts.sourceLang);
+    // 매핑 결과를 로그로 남긴다 — 추후 언어 추가 시 "음성 안 먹음" 증상을 빠르게 진단.
+    this.opts.log.info(
+      {
+        session: this.opts.sessionId,
+        sourceLang: this.opts.sourceLang,
+        languageCode,
+        targetLang: this.opts.targetLang,
+      },
+      "google_stt_opening",
+    );
     const config: Record<string, unknown> = {
       encoding: "LINEAR16",
       sampleRateHertz: 16000,
