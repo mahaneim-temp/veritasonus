@@ -10,25 +10,27 @@ import { BUSINESS, biz } from "@/lib/business";
 export const metadata = { title: "사업자 정보" };
 
 const ROWS: [string, string][] = [
+  // 법적 식별 정보
   ["상호",                BUSINESS.companyFull],
   ["대표자",              BUSINESS.representative],
   ["사업자등록번호",       BUSINESS.businessNumber],
   ["법인등록번호",         BUSINESS.corporateNumber],
+  ["통신판매업 신고번호",  BUSINESS.mailOrderNumber],
+  // 소재지 / 업종
   ["사업장 소재지",        BUSINESS.address],
   ["업태",                BUSINESS.businessType],
   ["종목",                BUSINESS.businessCategory],
-  ["통신판매업 신고번호",  biz(BUSINESS.mailOrderNumber)],
-  ["고객센터",            biz(BUSINESS.supportEmail)],
+  // 연락처
+  ["전화번호",            BUSINESS.phone],
+  ["고객센터 이메일",      BUSINESS.supportEmail],
+  // 인프라 / 책임자 (미확정)
   ["호스팅 서비스 제공자", biz(BUSINESS.hosting)],
   ["개인정보 보호책임자",  biz(BUSINESS.privacyOfficer)],
 ];
 
 /** null 항목이 하나라도 있으면 배너를 표시한다. */
 const HAS_PENDING =
-  BUSINESS.mailOrderNumber === null ||
-  BUSINESS.supportEmail === null ||
-  BUSINESS.hosting === null ||
-  BUSINESS.privacyOfficer === null;
+  BUSINESS.hosting === null || BUSINESS.privacyOfficer === null;
 
 export default function BusinessInfoPage() {
   return (
@@ -64,13 +66,14 @@ export default function BusinessInfoPage() {
       </table>
 
       <p className="mt-8 text-xs text-ink-muted">
-        문의: {BUSINESS.supportEmail ? (
-          <a href={`mailto:${BUSINESS.supportEmail}`} className="underline">
-            {BUSINESS.supportEmail}
-          </a>
-        ) : (
-          <span className="italic">고객센터 이메일 확정 후 기재 예정</span>
-        )}
+        문의:{" "}
+        <a href={`mailto:${BUSINESS.supportEmail}`} className="underline">
+          {BUSINESS.supportEmail}
+        </a>
+        {" "}·{" "}
+        <a href={`tel:${BUSINESS.phone.replace(/-/g, "")}`} className="underline">
+          {BUSINESS.phone}
+        </a>
       </p>
     </article>
   );

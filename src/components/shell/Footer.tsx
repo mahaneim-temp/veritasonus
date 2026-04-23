@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { BRAND_NAME, BRAND_TAGLINE, BRAND_SUPPORT_EMAIL } from "@/lib/brand";
-import { BUSINESS, biz } from "@/lib/business";
+import { BRAND_NAME, BRAND_TAGLINE } from "@/lib/brand";
+import { BUSINESS } from "@/lib/business";
 
 export function Footer() {
   return (
@@ -18,16 +18,17 @@ export function Footer() {
             <Link href={"/legal/privacy" as never}>개인정보처리방침</Link>
             <Link href={"/legal/refund" as never}>환불 정책</Link>
             <Link href={"/legal/business" as never}>사업자 정보</Link>
-            <a href={`mailto:${BRAND_SUPPORT_EMAIL}`}>고객센터</a>
+            <a href={`mailto:${BUSINESS.supportEmail}`}>고객센터</a>
           </nav>
         </div>
         {/* 통신판매업 표시 의무 (전자상거래법) — 값 변경 시 src/lib/business.ts 만 수정 */}
-        <p className="text-xs text-ink-muted border-t border-border-subtle pt-4">
-          {BUSINESS.companyShort} · 대표: {BUSINESS.representative} · 사업자등록번호: {BUSINESS.businessNumber} · 통신판매업: {biz(BUSINESS.mailOrderNumber, "신고 후 기재")}
-          {" "}·{" "}
+        <p className="text-xs text-ink-muted border-t border-border-subtle pt-4 leading-relaxed">
+          {BUSINESS.companyShort} · 대표: {BUSINESS.representative}
+          {" · "}사업자등록번호: {BUSINESS.businessNumber}
+          {" · "}통신판매업: {BUSINESS.mailOrderNumber}
+          {" · "}
           <a href="/legal/business" className="underline">사업자 정보</a>
-          {" "}|{" "}
-          © {new Date().getFullYear()} {BRAND_NAME}. All rights reserved.
+          {" | "}© {new Date().getFullYear()} {BRAND_NAME}. All rights reserved.
         </p>
       </div>
     </footer>
