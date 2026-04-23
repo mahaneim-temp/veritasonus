@@ -165,9 +165,14 @@ export default function ListenerPage({
   const emptyHint = (() => {
     if (session.state === "idle" || session.state === "preflight") {
       return (
-        <span className="inline-flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          게이트웨이 연결 중…
+        <span className="inline-flex flex-col items-center gap-1">
+          <span className="inline-flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            게이트웨이 연결 중…
+          </span>
+          <span className="text-xs text-ink-muted">
+            (상태: {session.state}) — 브라우저 DevTools 콘솔에서 [session] 로그를 확인해 주세요.
+          </span>
         </span>
       );
     }

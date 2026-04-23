@@ -55,8 +55,9 @@ const HEARTBEAT_TIMEOUT_MS = 10_000;
 /**
  * WS 가 열린 뒤 서버로부터 첫 메시지(auth.ok 등)가 이 시간 안에 오지 않으면 좀비로 간주하고
  * 강제로 닫아 재연결 사이클을 돌린다. Google STT 가 내부 에러로 첫 byte 도 밀어내지 못하는 경우를 잡음.
+ * 값은 "느린 네트워크에서도 false positive 를 내지 않을 만큼 여유" + "좀비일 때 사용자가 기다리는 한계" 사이 절충.
  */
-const AUTH_WATCHDOG_MS = 8_000;
+const AUTH_WATCHDOG_MS = 15_000;
 
 /** 체험 총 시간(초). 서버 GUEST_TRIAL_SECONDS 와 일치해야 함. */
 const TRIAL_TOTAL_SEC =
@@ -262,17 +263,12 @@ export function useInterpretSession(opts: Options) {
           // 서버 관점에서는 code 쪽이 "영문 키" 라 쓸만하고, message 는 raw 에러 문자열이라
           // 사용자에게 그대로 보이기엔 부적절 — 우선순위: code > message > "unknown".
           setLastError(ev.code || ev.message || "unknown");
-          if (ev.retriable) {
-            // 재시도 가능 에러는 WS 를 닫아 재연결 루프로 합류시킨다.
-            // (과거엔 WS 를 살려둔 채 배너만 띄워, 프로바이더 좀비 상태에서 아무 일도 안 일어났다.)
-            try {
-              wsRef.current?.close(4005, "server_retry");
-            } catch {
-              // ignore
-            }
-          } else {
+          if (!ev.retriable) {
             dispatch({ type: "end", reason: "error" });
           }
+          // retriable:true 는 서버가 WS 를 닫지 않은 "경고" 수준 — 클라가 먼저 끊지 않는다.
+          // 진짜 치명적 에러는 서버가 직접 ws.close(1011) 해서 onclose 에서 재연결 루프 합류.
+          // (과거엔 여기서도 close 했는데, preflight/idle 단계에서 받으면 재연결 무한 루프가 생겼다.)
           return;
         default:
           return;
@@ -376,11 +372,15 @@ export function useInterpretSession(opts: Options) {
   // ── WS 연결 (공통 경로) ───────────────────────────────────
 
   function connectWs(token: string, gatewayUrl: string): WebSocket {
+    // eslint-disable-next-line no-console
+    console.info("[session] WebSocket new", { gatewayUrl });
     const ws = new WebSocket(gatewayUrl);
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
     ws.onopen = () => {
+      // eslint-disable-next-line no-console
+      console.info("[session] ws.onopen → sending auth.hello");
       const hello: ClientEvent = { type: "auth.hello", token };
       ws.send(JSON.stringify(hello));
       startHeartbeat();
@@ -395,20 +395,35 @@ export function useInterpretSession(opts: Options) {
       if (typeof ev.data === "string") {
         try {
           const parsed = JSON.parse(ev.data) as ServerEvent;
+          // 고빈도 이벤트(speech_partial)는 noisy 해서 생략.
+          if (parsed.type !== "speech_partial" && parsed.type !== "heartbeat.pong") {
+            // eslint-disable-next-line no-console
+            console.info("[session] ws.onmessage", parsed.type, parsed);
+          }
           applyServerEvent(parsed);
-        } catch {
-          // malformed frame ignored
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("[session] ws.onmessage parse failed", err);
         }
       }
     };
 
-    ws.onerror = () => {
+    ws.onerror = (ev) => {
       // 주의: ws.onerror 는 종종 onclose 직전에 발화한다. 여기서 raw 코드를 사용자에게
       // 노출하지 않는다 — onclose 쪽에서 일관된 재연결 루틴이 맡는다.
       // (과거엔 여기서 setLastError("gateway_error") 를 던져 배너를 오염시켰다.)
+      // eslint-disable-next-line no-console
+      console.warn("[session] ws.onerror", ev);
     };
 
     ws.onclose = (closeEv) => {
+      // eslint-disable-next-line no-console
+      console.info("[session] ws.onclose", {
+        code: closeEv.code,
+        reason: closeEv.reason,
+        wasClean: closeEv.wasClean,
+        state: stateSnapshotRef.current,
+      });
       stopHeartbeat();
       clearAuthWatchdog();
       if (unmountedRef.current) return;
@@ -427,8 +442,8 @@ export function useInterpretSession(opts: Options) {
   function armAuthWatchdog(ws: WebSocket) {
     clearAuthWatchdog();
     authWatchdogRef.current = setTimeout(() => {
-      // 응답 없음. setLastError 는 ws_disconnected 경로에서 굳이 필요 없지만,
-      // "auth_watchdog" 코드를 저장해 두면 humanize 후 UI 에 원인을 명확히 보여줄 수 있다.
+      // onmessage 가 한 번이라도 호출됐으면 이미 clearAuthWatchdog 가 실행되어 여기 도달 불가.
+      // 여기 도달 = 서버가 auth.ok 조차 못 보낸 진짜 좀비 상황 → close 해서 재연결 루틴에 맡김.
       setLastError("auth_watchdog");
       try {
         ws.close(4006, "auth_watchdog");
@@ -532,24 +547,41 @@ export function useInterpretSession(opts: Options) {
 
   async function start() {
     setLastError(null);
+    // 진단 로그 — 실측 원인 파악용. 정상화되면 제거 예정.
+    // eslint-disable-next-line no-console
+    console.info("[session] start() begin", { sessionId: opts.sessionId, mode: opts.mode });
     try {
+      // eslint-disable-next-line no-console
+      console.info("[session] fetching token");
       const { token, gateway_url, expires_at } = await fetchToken();
+      // eslint-disable-next-line no-console
+      console.info("[session] token received", { gateway_url, expires_at });
       currentTokenRef.current = token;
       gatewayUrlRef.current = gateway_url;
       ctxRef.current.hasGatewayToken = true;
       scheduleTokenRefresh(expires_at);
 
+      // eslint-disable-next-line no-console
+      console.info("[session] requesting mic");
       await mic.start();
+      // eslint-disable-next-line no-console
+      console.info("[session] mic ready");
       ctxRef.current.hasMicPermission = true;
 
+      // eslint-disable-next-line no-console
+      console.info("[session] connecting ws");
       connectWs(token, gateway_url);
 
       dispatch({ type: "preflight_ok" });
       dispatch({ type: "start_quick" });
+      // eslint-disable-next-line no-console
+      console.info("[session] start() dispatched preflight_ok + start_quick");
     } catch (e) {
       // 실패 원인은 lastError 로 남기되, 호출자가 "시작 실패" 를 감지해 로컬 UI 상태
       // (예: 리스너 페이지의 started=true) 를 되돌릴 수 있도록 re-throw.
       const code = e instanceof Error && e.message ? e.message : "unknown";
+      // eslint-disable-next-line no-console
+      console.error("[session] start() failed", { code, error: e });
       setLastError(code);
       mic.stop();
       closeWsSilently();
