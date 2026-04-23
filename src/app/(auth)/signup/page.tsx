@@ -2,15 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabaseClient } from "@/lib/supabase/client";
+import { BRAND_NAME } from "@/lib/brand";
 
 const LEGAL_VERSION = "2026-04-22";
 
 export default function SignupPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [agreeTerms, setAgreeTerms] = useState(false);
@@ -57,14 +59,16 @@ export default function SignupPage() {
       // 비동기 best-effort. 실패해도 가입 자체는 완료.
     }
     setBusy(false);
-    router.push("/");
+    // 가입 완료 → next 파라미터가 있으면 해당 경로로, 없으면 /start/quick (무료 10분 체험 바로 진입)
+    const next = searchParams.get("next") ?? "/start/quick";
+    router.push(next as never);
   }
 
   return (
     <div className="container max-w-md py-16">
       <h1 className="text-2xl font-semibold">회원 가입</h1>
       <p className="mt-1.5 text-sm text-ink-secondary">
-        가입 후 매달 10분 무료로 Lucid Interpret을 사용할 수 있습니다.
+        가입 후 매달 10분 무료로 {BRAND_NAME}을 사용할 수 있습니다.
       </p>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <label className="block">

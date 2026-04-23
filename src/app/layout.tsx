@@ -3,15 +3,16 @@ import "./globals.css";
 import { Header } from "@/components/shell/Header";
 import { Footer } from "@/components/shell/Footer";
 import { TrialBanner } from "@/components/shell/TrialBanner";
+import { BRAND_NAME, BRAND_TAGLINE } from "@/lib/brand";
 
 export const metadata: Metadata = {
   title: {
-    default: "Lucid Interpret · 중요한 대화를 위한 통역",
-    template: "%s · Lucid Interpret",
+    default: `${BRAND_NAME} · ${BRAND_TAGLINE}`,
+    template: `%s · ${BRAND_NAME}`,
   },
   description:
-    "발표·설교·회의·진료에서 정확하고 검토 가능한 통역을 제공합니다. 게스트 10분 무료 체험.",
-  applicationName: "Lucid Interpret",
+    "발표·설교·회의·진료에서 정확하고 검토 가능한 통역을 제공합니다. 무료 1분 체험 가능.",
+  applicationName: BRAND_NAME,
 };
 
 export const viewport: Viewport = {

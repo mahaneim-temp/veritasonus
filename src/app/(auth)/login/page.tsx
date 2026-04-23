@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabaseClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +28,9 @@ export default function LoginPage() {
       setError(error.message);
       return;
     }
-    router.push("/");
+    // ?next= 파라미터가 있으면 해당 경로로, 없으면 홈으로
+    const next = searchParams.get("next") ?? "/";
+    router.push(next as never);
   }
 
   return (
@@ -60,6 +64,12 @@ export default function LoginPage() {
           {busy ? "로그인 중…" : "로그인"}
         </Button>
       </form>
+      <p className="mt-6 text-center text-sm text-ink-secondary">
+        계정이 없으신가요?{" "}
+        <Link href={"/signup" as never} className="underline text-ink-primary">
+          무료로 가입하기
+        </Link>
+      </p>
     </div>
   );
 }
