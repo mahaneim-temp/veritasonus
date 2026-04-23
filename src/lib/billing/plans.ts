@@ -81,9 +81,9 @@ export const QUOTA_WARN_RATIO = 0.8; // 80% 도달 시 이메일 1회 경고.
 export const QUOTA_LIMIT_RATIO = 1.0; // 100% 도달 시 세션 강제 종료.
 
 export function quotaSecondsForRole(role: string | null | undefined): number | null {
-  // Wallet-based system: admin/superadmin unlimited, others checked via wallet.
+  // Wallet-based system: admin/superadmin/unlimited unlimited, others checked via wallet.
   // This function is kept for compatibility but wallet.getEffectiveRemaining is preferred.
-  if (role === "admin" || role === "superadmin") return null;
+  if (role === "admin" || role === "superadmin" || role === "unlimited") return null;
   return null; // wallet system handles per-member quotas
 }
 

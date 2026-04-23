@@ -39,6 +39,7 @@ function modeFromQuery(raw: string | null): SessionMode {
   return "interactive_interpretation";
 }
 
+// sub 는 모드의 설계 의도(왜 이렇게 동작하는지) 까지 짧게 전달한다.
 function modeLabel(mode: SessionMode): {
   title: string;
   sub: string;
@@ -47,20 +48,20 @@ function modeLabel(mode: SessionMode): {
   if (mode === "listener_live" || mode === "listener_live_recorded") {
     return {
       title: "청취 모드",
-      sub: "현장 발화를 받아 실시간으로 번역만 제공합니다.",
+      sub: "자막처럼 따라가기 — 현장 발화를 실시간 번역 텍스트로만 보여주며, 문장이 화면에 충분히 머물도록 설계했습니다.",
       icon: Ear,
     };
   }
   if (mode === "assist_interpretation") {
     return {
       title: "통역 어시스트",
-      sub: "직접 말하려는데 막힐 때 단어·표현을 제안합니다.",
+      sub: "대신 말해주지 않습니다 — 직접 말하려다 막히는 단어·표현만 제안해 '말하는 나'를 도와주는 방식입니다.",
       icon: HandHelping,
     };
   }
   return {
-    title: "빠른 시작",
-    sub: "언어쌍과 품질 모드만 선택하고 즉시 시작합니다.",
+    title: "빠른 시작 (대화 모드)",
+    sub: "짧게 끊어 바로 번역 — 대화의 호흡을 깨지 않도록 의도적으로 빠르게 반응합니다.",
     icon: Zap,
   };
 }

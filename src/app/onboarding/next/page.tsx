@@ -21,24 +21,26 @@ type CardDef = {
   recommendedFor: SessionMode[];
 };
 
+// 각 카드의 sub 는 단순 기능 설명이 아니라 "왜 이 모드가 이렇게 보이는지"
+// 설계 철학을 함께 전한다. (짧게 끊음 / 자막처럼 / 의미 흐름 / 준비된 안정성)
 const CARDS: CardDef[] = [
   {
-    title: "빠른 통역",
-    sub: "언어쌍만 확인하고 바로 시작. 대화형 통역의 기본 흐름.",
+    title: "대화 모드 (빠른 통역)",
+    sub: "짧은 단위로 끊어 바로 번역 — 대화의 호흡을 깨지 않도록 의도적으로 빠르게 반응합니다. 주고받는 회화·인터뷰·1:1 통역에 최적.",
     href: "/start/quick",
     icon: Zap,
     recommendedFor: ["interactive_interpretation"],
   },
   {
-    title: "청취 모드",
-    sub: "상대방 발화를 실시간 번역만 본다. 앱을 몰래 쓰지 않고 '나만 이해'.",
+    title: "청취 모드 (자막처럼 따라가기)",
+    sub: "상대 발화를 실시간 번역 텍스트로만 보여줍니다. 읽기 편한 흐름을 위해 문장이 화면에 충분히 머물도록 텍스트 중심으로 설계되었습니다.",
     href: "/start/quick?mode=listener_live",
     icon: Ear,
     recommendedFor: ["listener_live", "listener_live_recorded"],
   },
   {
-    title: "준비된 세션",
-    sub: "회의·설교·발표 전에 맥락·자료를 미리 등록하고 시작. 품질이 가장 좋음.",
+    title: "준비형 시작 (발표·설교·강연)",
+    sub: "긴 연설의 의미 흐름을 지키기 위해 문장 단위를 더 길게 묶어 번역합니다. 원고·슬라이드·용어를 미리 등록하면 예측성과 정확도가 눈에 띄게 올라갑니다.",
     href: "/start/prepared",
     icon: BookMarked,
     recommendedFor: ["assist_interpretation"],

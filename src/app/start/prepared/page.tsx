@@ -79,7 +79,8 @@ export default function PreparedStartPage() {
     <div className="container max-w-4xl py-10 md:py-16">
       <h1 className="text-3xl font-semibold tracking-tight">준비하고 시작</h1>
       <p className="mt-2 text-ink-secondary">
-        미리 알려주시면 통역 품질이 더 좋아집니다.
+        발표·설교·강연처럼 긴 연설은 <strong>의미 흐름을 지키기 위해 문장 단위를 더 길게</strong> 묶어 번역합니다.
+        원고·슬라이드·용어를 미리 등록할수록 예측성과 정확도가 눈에 띄게 올라갑니다.
       </p>
 
       <div className="mt-8 grid gap-6 md:grid-cols-[220px_1fr]">
@@ -263,13 +264,13 @@ function ModePick({
           <div className="font-medium text-sm">{SESSION_MODE_LABELS[m]}</div>
           <div className="text-xs text-ink-muted mt-0.5">
             {m === "interactive_interpretation" &&
-              "내가 말하는 내용을 상대 언어로 정확히 전달합니다."}
+              "대화 모드 — 짧게 끊어 빠르게 반응. 주고받는 회화·1:1 통역에 맞춰 호흡을 살립니다. 발표·설교처럼 긴 연설이면 아래 '자료/원고' 단계까지 채워 의미 단위가 길어지도록 해주세요."}
             {m === "listener_live" &&
-              "화자는 앱을 쓰지 않고, 나만 실시간으로 이해합니다."}
+              "청취 모드 — 자막처럼 따라가기. 화자는 앱을 쓰지 않고, 나만 텍스트 중심으로 흐름을 읽습니다."}
             {m === "listener_live_recorded" &&
-              "Listener + 녹음. 끝난 후 사후 복원본 생성 가능."}
+              "청취 + 녹음 — 자막처럼 실시간 이해에 녹음을 더해, 종료 후 사후 복원본을 풍부하게 만들 수 있습니다."}
             {m === "assist_interpretation" &&
-              "직접 말하려 하다 막히는 부분만 도와줍니다."}
+              "어시스트 — 대신 말해주지 않습니다. 직접 말하려다 막히는 단어·표현만 제안해 '말하는 나'를 돕습니다."}
           </div>
         </button>
       ))}

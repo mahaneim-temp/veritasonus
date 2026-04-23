@@ -18,6 +18,9 @@ export const LANGS: readonly Language[] = [
   { code: "en", label: "English" },
   { code: "ja", label: "日本語" },
   { code: "zh", label: "中文" },
+  // 2026-04-23: 타갈로그 추가. OpenAI Realtime / Whisper 는 ISO 639-1 "tl" 을 인식.
+  // (Google STT 로 폴백할 경우엔 BCP-47 "fil-PH" 로 매핑 필요 — adapter 에서 변환.)
+  { code: "tl", label: "Filipino (Tagalog)" },
 ] as const;
 
 export const LANG_CODES: readonly string[] = LANGS.map((l) => l.code);

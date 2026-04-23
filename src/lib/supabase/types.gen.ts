@@ -596,7 +596,7 @@ export interface Database {
       };
     };
     Enums: {
-      user_role: "guest" | "member" | "paid" | "admin" | "superadmin";
+      user_role: "guest" | "member" | "paid" | "unlimited" | "admin" | "superadmin";
       session_mode:
         | "interactive_interpretation"
         | "listener_live"

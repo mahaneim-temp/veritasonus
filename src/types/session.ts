@@ -7,6 +7,9 @@ export type UserRole =
   | "guest"
   | "member"
   | "paid"
+  // 'unlimited' 은 지갑 우회(무제한 사용)만 허용하고 관리자 메뉴 접근은 부여하지 않는 권한.
+  // 주로 내부 파트너·장기 QA 테스터 계정에 사용.
+  | "unlimited"
   | "admin"
   | "superadmin";
 

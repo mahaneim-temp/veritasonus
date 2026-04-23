@@ -9,7 +9,8 @@
  * 소진 순서: free → purchased → granted
  * Lazy reset: 접근 시 KST 월 기준으로 free 리셋.
  *
- * Admin(role=admin|superadmin) 은 지갑 우회 — 무제한.
+ * Admin(role=admin|superadmin) 과 unlimited 권한은 지갑 우회 — 무제한.
+ * (unlimited 는 관리자 메뉴 접근은 없지만 사용량만 무제한인 별도 권한)
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -185,7 +186,7 @@ export async function creditPurchase(
 }
 
 /**
- * 역할 기반 유효 잔여 초. admin/superadmin → null(무제한).
+ * 역할 기반 유효 잔여 초. admin/superadmin/unlimited → null(무제한).
  * 회원이 아직 지갑이 없으면 기본 free 600s 적용.
  */
 export async function getEffectiveRemaining(
@@ -194,7 +195,9 @@ export async function getEffectiveRemaining(
   role: string | null | undefined,
   now: Date = new Date(),
 ): Promise<number | null> {
-  if (role === "admin" || role === "superadmin") return null; // unlimited
+  if (role === "admin" || role === "superadmin" || role === "unlimited") {
+    return null; // unlimited
+  }
   const wallet = await getWallet(sb, userId, now);
   return computeRemaining(wallet);
 }

@@ -10,8 +10,12 @@ create extension if not exists "pgcrypto";
 
 -- ── enums ─────────────────────────────────────────────────────
 do $$ begin
-  create type user_role as enum ('guest','member','paid','admin','superadmin');
+  create type user_role as enum ('guest','member','paid','unlimited','admin','superadmin');
 exception when duplicate_object then null; end $$;
+-- 기존 DB 에 enum 값 추가 (새로 만들 때는 위 create 에서 처리됨)
+do $$ begin
+  alter type user_role add value if not exists 'unlimited' before 'admin';
+exception when others then null; end $$;
 
 do $$ begin
   create type session_mode as enum (
@@ -293,18 +297,36 @@ CREATE TABLE IF NOT EXISTS public.user_terms (
 CREATE INDEX IF NOT EXISTS user_terms_by_user
   ON public.user_terms(user_id, lang_pair);
 
+-- 2026-04-23: 무제한 권한 화이트리스트.
+-- 이 테이블에 이메일이 있으면 가입 즉시 role='unlimited' 로 부여된다.
+-- admin 권한과는 완전히 분리 — /admin 접근은 granted 되지 않음.
+CREATE TABLE IF NOT EXISTS public.unlimited_whitelist (
+  email text PRIMARY KEY,
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- ── new-user trigger (auth.users → public.users + user_preferences) ──────
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  assigned_role user_role := 'member';
 begin
+  -- 화이트리스트에 이메일이 있으면 unlimited 권한으로 생성.
+  if exists (
+    select 1 from public.unlimited_whitelist w where w.email = new.email
+  ) then
+    assigned_role := 'unlimited';
+  end if;
+
   insert into public.users (id, email, role, locale, display_name)
   values (
     new.id,
     new.email,
-    'member',
+    assigned_role,
     coalesce(new.raw_user_meta_data->>'locale', 'ko'),
     new.raw_user_meta_data->>'display_name'
   )
