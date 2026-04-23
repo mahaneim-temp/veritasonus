@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Mic, MicOff, Clock, AlertTriangle } from "lucide-react";
@@ -15,7 +15,7 @@ const TOTAL_SECONDS = 60;
 
 type Phase = "idle" | "live" | "ended";
 
-export default function TrialLivePage() {
+function TrialLiveInner() {
   const router = useRouter();
   const params = useSearchParams();
   const sessionId = params.get("sid");
@@ -210,5 +210,13 @@ export default function TrialLivePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function TrialLivePage() {
+  return (
+    <Suspense fallback={<div className="container max-w-2xl py-8 text-ink-muted">로딩 중…</div>}>
+      <TrialLiveInner />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { BRAND_NAME } from "@/lib/brand";
 
 const LEGAL_VERSION = "2026-04-22";
 
-export default function SignupPage() {
+function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -157,5 +157,13 @@ export default function SignupPage() {
         </Button>
       </form>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div className="container max-w-md py-16 text-ink-muted">로딩 중…</div>}>
+      <SignupForm />
+    </Suspense>
   );
 }

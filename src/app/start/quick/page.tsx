@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRightLeft, Ear, HandHelping, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -71,7 +71,7 @@ function modeLabel(mode: SessionMode): {
   };
 }
 
-export default function QuickStartPage() {
+function QuickStartInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // URL 의 ?mode 를 첫 렌더에 한 번 읽고 고정. 변경하고 싶으면 다른 세션 start 화면으로 재진입.
@@ -219,6 +219,14 @@ export default function QuickStartPage() {
         </Button>
       </div>
     </div>
+  );
+}
+
+export default function QuickStartPage() {
+  return (
+    <Suspense fallback={<div className="container max-w-3xl py-10 text-ink-muted">로딩 중…</div>}>
+      <QuickStartInner />
+    </Suspense>
   );
 }
 
