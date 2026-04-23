@@ -15,8 +15,8 @@ export const BRAND_TAGLINE = "중요한 대화를 위한 통역";
 /** 법적 문서에서 사용하는 상호/서비스명. */
 export const BRAND_LEGAL_NAME = "Veritasonus";
 
-/** 운영사 (추후 변경). */
-export const BRAND_OPERATOR = "TLTech";
+/** 운영사 한국 상호 (법적 전체 상호는 src/lib/business.ts 참조). */
+export const BRAND_OPERATOR = "티엘테크";
 
 /** 대표 도메인 (배포 후 실제 도메인으로 교체). */
 export const BRAND_DOMAIN = "veritasonus.com";

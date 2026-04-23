@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { BRAND_NAME, BRAND_TAGLINE, BRAND_OPERATOR, BRAND_SUPPORT_EMAIL } from "@/lib/brand";
+import { BRAND_NAME, BRAND_TAGLINE, BRAND_SUPPORT_EMAIL } from "@/lib/brand";
+import { BUSINESS, biz } from "@/lib/business";
 
 export function Footer() {
   return (
@@ -20,11 +21,11 @@ export function Footer() {
             <a href={`mailto:${BRAND_SUPPORT_EMAIL}`}>고객센터</a>
           </nav>
         </div>
-        {/* Business info summary (통신판매업 표시 의무 — 실제 정보는 /legal/business 에서 교체) */}
+        {/* 통신판매업 표시 의무 (전자상거래법) — 값 변경 시 src/lib/business.ts 만 수정 */}
         <p className="text-xs text-ink-muted border-t border-border-subtle pt-4">
-          {BRAND_OPERATOR} · 대표: (지정 필요) · 사업자등록번호: 000-00-00000 · 통신판매업: 제0000호
+          {BUSINESS.companyShort} · 대표: {BUSINESS.representative} · 사업자등록번호: {BUSINESS.businessNumber} · 통신판매업: {biz(BUSINESS.mailOrderNumber, "신고 후 기재")}
           {" "}·{" "}
-          <a href="/legal/business" className="underline">자세히</a>
+          <a href="/legal/business" className="underline">사업자 정보</a>
           {" "}|{" "}
           © {new Date().getFullYear()} {BRAND_NAME}. All rights reserved.
         </p>
