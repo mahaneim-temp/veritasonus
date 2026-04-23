@@ -36,21 +36,24 @@ export function UserMenu({
     window.location.assign("/");
   }
 
+  // staff 는 "관리자" 배지가 이미 신분을 표시하므로 이름 label 을 생략해
+  // "관리자 관리자" 같은 중복을 피한다. 일반 회원은 이름/이메일 앞부분 표시.
   return (
     <div className="flex items-center gap-1.5">
-      {isStaff && (
-        <Link href={"/admin" as never}>
+      {isStaff ? (
+        <Link href={"/admin" as never} title={email}>
           <Button variant="ghost" size="sm" className="text-primary">
             관리자
           </Button>
         </Link>
+      ) : (
+        <span
+          className="text-xs text-ink-secondary hidden sm:inline max-w-[140px] truncate"
+          title={email}
+        >
+          {label}
+        </span>
       )}
-      <span
-        className="text-xs text-ink-secondary hidden sm:inline max-w-[140px] truncate"
-        title={email}
-      >
-        {label}
-      </span>
       <Button variant="ghost" size="sm" onClick={logout}>
         로그아웃
       </Button>

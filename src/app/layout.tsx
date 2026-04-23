@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Header } from "@/components/shell/Header";
 import { Footer } from "@/components/shell/Footer";
-import { TrialBanner } from "@/components/shell/TrialBanner";
+import { TrialBannerGate } from "@/components/shell/TrialBannerGate";
 import { BRAND_NAME, BRAND_TAGLINE } from "@/lib/brand";
 
 export const metadata: Metadata = {
@@ -32,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="ko" suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
-        <TrialBanner />
+        <TrialBannerGate />
         <Header />
         <main className="flex-1">{children}</main>
         <Footer />
