@@ -3,7 +3,10 @@
  *
  * ⚠️  이 문서는 아우(AI) 가 표준 SaaS 약관을 베이스로 작성한 **초안**입니다.
  *     퍼블리시 전에 반드시 변호사(또는 형님) 검토 필요.
+ *     POST-BETA: 실제 사업자 정보, 대표자명, 서비스명 확정 후 본문 교체.
  */
+
+import { BRAND_NAME, BRAND_OPERATOR, BRAND_SUPPORT_EMAIL } from "@/lib/brand";
 
 const VERSION = "2026-04-22";
 
@@ -11,13 +14,13 @@ export default function TermsPage() {
   return (
     <article className="container max-w-3xl py-12 prose prose-sm">
       <p className="text-xs text-ink-muted">
-        버전: {VERSION} (초안 — 법무 검토 필요)
+        버전: {VERSION} · ⚠️ 초안 — 베타 운영용. 공개 출시 전 법무 검토 필요.
       </p>
       <h1>이용약관</h1>
 
       <h2>제1조 (목적)</h2>
       <p>
-        본 약관은 이용자가 lucid-interpret(이하 &ldquo;서비스&rdquo;)을
+        본 약관은 이용자가 {BRAND_NAME}(이하 &ldquo;서비스&rdquo;, 운영사: {BRAND_OPERATOR})을
         이용함에 있어 필요한 권리·의무·책임 사항을 정합니다.
       </p>
 
@@ -25,13 +28,13 @@ export default function TermsPage() {
       <ul>
         <li>&ldquo;회원&rdquo;: 이메일과 비밀번호로 가입하여 계정을 보유한 이용자.</li>
         <li>
-          &ldquo;게스트&rdquo;: 회원 가입 없이 제한된 시간(최대 10분) 동안
-          체험하는 이용자.
+          &ldquo;맛보기 체험&rdquo;: 회원 가입 없이 1분간 서비스를 무료로 체험하는 이용자.
         </li>
         <li>
           &ldquo;세션&rdquo;: 실시간 통역 또는 리스너 모드를 1회 시작·종료하는
           단위.
         </li>
+        <li>&ldquo;크레딧&rdquo;: 서비스 이용 시간을 초(second) 단위로 환산한 이용권.</li>
       </ul>
 
       <h2>제3조 (서비스의 제공)</h2>
@@ -41,7 +44,7 @@ export default function TermsPage() {
           제공합니다.
         </li>
         <li>
-          서비스는 외부 AI 공급자(OpenAI 등)의 API 에 의존하며, 해당 공급자의
+          서비스는 외부 AI·클라우드 공급자의 API 에 의존하며, 해당 공급자의
           장애·정책 변경 시 서비스 가용성 또는 품질이 영향을 받을 수 있습니다.
         </li>
         <li>
@@ -63,17 +66,17 @@ export default function TermsPage() {
       <h2>제5조 (이용 요금 및 환불)</h2>
       <ol>
         <li>
-          서비스의 유료 요금제 및 결제는 서비스 내 요금 페이지(
-          <code>/pricing</code>)에 고지된 조건에 따릅니다.
+          서비스의 크레딧 팩 가격 및 결제는 서비스 내 요금 페이지(
+          <code>/pricing</code>)에 고지된 조건에 따릅니다. 회원 가입 시 매월
+          10분(600초)의 무료 크레딧이 제공됩니다(익월 이월 없음).
         </li>
         <li>
-          정기 결제는 Stripe 를 통해 진행되며, 이용자는 언제든지 해지할 수
-          있습니다. 이미 결제된 기간에 대한 환불은 전자상거래법·내부 환불
-          정책에 따릅니다.
+          결제는 서비스가 지원하는 결제 수단을 통해 진행됩니다. 구매된 크레딧의
+          환불은 서비스 내 환불 정책(<code>/legal/refund</code>)에 따릅니다.
         </li>
         <li>
-          플랜별 월 사용 시간 한도가 존재할 수 있으며, 한도 초과 시 추가 구매
-          또는 한도 초기화(익월)까지 서비스가 일시 제한될 수 있습니다.
+          무료 크레딧 소진 후에는 크레딧 팩을 구매하거나 월 초 무료 크레딧 지급
+          시까지 서비스 이용이 제한될 수 있습니다.
         </li>
       </ol>
 
@@ -118,11 +121,17 @@ export default function TermsPage() {
       <h2>제10조 (분쟁 해결)</h2>
       <p>
         본 약관과 관련하여 발생한 분쟁은 대한민국 법을 준거법으로 하며, 관할
-        법원은 서울중앙지방법원을 제1심 관할로 합니다. (⚠️ 실제 운영 지역에
-        맞춰 조정 필요.)
+        법원은 서울중앙지방법원을 제1심 관할로 합니다.
       </p>
 
-      <p className="text-xs text-ink-muted">시행일: {VERSION}</p>
+      <h2>제11조 (문의)</h2>
+      <p>
+        이용약관 관련 문의: <a href={`mailto:${BRAND_SUPPORT_EMAIL}`}>{BRAND_SUPPORT_EMAIL}</a>
+      </p>
+
+      <p className="text-xs text-ink-muted">
+        시행일: {VERSION} · ⚠️ POST-BETA: 법무 검토 후 최종 확정 예정.
+      </p>
     </article>
   );
 }

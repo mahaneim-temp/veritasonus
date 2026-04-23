@@ -4,7 +4,10 @@
  * ⚠️  경고: 이 문서는 아우(AI) 가 표준 SaaS 패턴 기반으로 작성한 **초안**입니다.
  *     최종 공개(퍼블리시) 전에 반드시 변호사(또는 형님) 검토를 거치세요.
  *     한국 PIPA + 통신비밀보호법 적용 서비스이므로 자구 오류가 실질 리스크로 이어질 수 있습니다.
+ *     POST-BETA: 개인정보 보호책임자 성명·연락처 기입 필수.
  */
+
+import { BRAND_NAME, BRAND_OPERATOR, BRAND_SUPPORT_EMAIL } from "@/lib/brand";
 
 const VERSION = "2026-04-22";
 
@@ -12,12 +15,12 @@ export default function PrivacyPage() {
   return (
     <article className="container max-w-3xl py-12 prose prose-sm">
       <p className="text-xs text-ink-muted">
-        버전: {VERSION} (초안 — 법무 검토 필요)
+        버전: {VERSION} · ⚠️ 초안 — 베타 운영용. 공개 출시 전 법무 검토 필요.
       </p>
       <h1>개인정보 처리방침</h1>
 
       <p>
-        lucid-interpret(이하 &ldquo;서비스&rdquo;)은 이용자의 개인정보를 소중히
+        {BRAND_NAME}(운영사: {BRAND_OPERATOR}, 이하 &ldquo;서비스&rdquo;)은 이용자의 개인정보를 소중히
         생각하며, 「개인정보 보호법」을 비롯한 관련 법령을 준수합니다.
       </p>
 
@@ -53,21 +56,21 @@ export default function PrivacyPage() {
       <h2>3. 개인정보의 제3자 제공 및 처리 위탁</h2>
       <p>
         서비스는 다음과 같은 글로벌 공급자의 인프라·AI 기능을 사용합니다. 이용자의
-        발화 음성 및 전사는 해당 공급자에게 실시간으로 전송되어 처리됩니다.
+        발화 음성 및 전사 텍스트는 해당 공급자에게 실시간으로 전송되어 처리됩니다.
       </p>
       <ul>
         <li>
-          <strong>OpenAI, L.L.C.(미국)</strong> — 실시간 음성 인식·번역(OpenAI
-          Realtime API) 및 사후 복원 요약(Chat Completions). 서비스는 OpenAI 의
-          zero-data-retention 옵션을 적용하여 이용자의 데이터가 OpenAI 의
-          모델 학습에 사용되지 않도록 합니다.
+          <strong>Google LLC(미국)</strong> — 실시간 음성 인식(Cloud Speech-to-Text),
+          번역(Cloud Translation API), AI 요약(Gemini). Google Cloud는 계약에 따라
+          고객 데이터를 서비스 개선·모델 학습에 사용하지 않습니다.
         </li>
         <li>
-          <strong>Supabase Inc.(미국/호스팅 리전: 지정)</strong> — 계정 정보,
+          <strong>Supabase Inc.(미국 / 호스팅 리전: 도쿄 NRT)</strong> — 계정 정보,
           전사 텍스트, 업로드 자료 보관.
         </li>
         <li>
-          <strong>Stripe, Inc.(미국)</strong> — 결제 및 구독 관리.
+          <strong>결제 공급자</strong> — 베타 기간: mock 결제(실제 카드 정보 수집 없음).
+          정식 출시 후: TossPayments 또는 Stripe (확정 시 본 항목 업데이트 예정).
         </li>
         <li>
           <strong>Upstash, Inc.(미국)</strong> — 트라이얼 카운터, 레이트
@@ -75,8 +78,7 @@ export default function PrivacyPage() {
         </li>
       </ul>
       <p className="text-xs text-ink-muted">
-        ⚠️ 실제 리전 정보는 배포 시점의 Supabase 프로젝트 설정에 맞춰 수정이
-        필요합니다.
+        ⚠️ POST-BETA: 결제 공급자 확정 후 위 항목 업데이트 필요.
       </p>
 
       <h2>4. 리스너(Listener) 모드 — 제3자 발화 처리</h2>
@@ -130,14 +132,14 @@ export default function PrivacyPage() {
       </ul>
 
       <h2>9. 개인정보 보호책임자</h2>
-      <p className="text-xs text-ink-muted">
-        ⚠️ 실제 운영 개시 전에 성명·이메일·연락처를 반드시 기입해야 합니다.
-        한국 개인정보 보호법은 책임자 공시를 의무화합니다.
-      </p>
       <ul>
-        <li>성명: (지정 필요)</li>
-        <li>이메일: (지정 필요)</li>
+        <li>성명: (지정 필요 — POST-BETA 전 반드시 기입)</li>
+        <li>이메일: <a href={`mailto:${BRAND_SUPPORT_EMAIL}`}>{BRAND_SUPPORT_EMAIL}</a></li>
       </ul>
+      <p className="text-xs text-ink-muted">
+        ⚠️ POST-BETA 필수: 한국 개인정보 보호법은 책임자 성명·연락처 공시를 의무화합니다.
+        실제 담당자 정보로 교체 후 공개하세요.
+      </p>
 
       <h2>10. 본 방침의 개정</h2>
       <p>

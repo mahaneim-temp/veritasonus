@@ -194,18 +194,59 @@ SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public';
 
 ---
 
-## §4. 환경별 도메인 구조 (권장)
+## §4. Veritasonus.com 도메인 연결 권장 구조
 
-| 환경 | 웹앱 URL | Gateway URL |
+도메인 `veritasonus.com` 이 확보되었으므로 아래 구조를 권장한다.
+
+### 4-1. 권장 서브도메인 배치
+
+| 서브도메인 | 용도 | 대상 |
 |---|---|---|
-| Production | `https://veritasonus.com` | `wss://gw.veritasonus.com` |
-| Staging | `https://staging.veritasonus.com` | `wss://gw-staging.veritasonus.com` |
-| Local dev | `http://localhost:3000` | `ws://localhost:8787` |
+| `veritasonus.com` | 메인 서비스 (홈, 로그인, 서비스 전체) | Vercel |
+| `app.veritasonus.com` | (선택) 서비스 진입점 별도 분리 시 사용 | Vercel |
+| `gw.veritasonus.com` | realtime-gateway WebSocket | Fly.io |
 
-Fly.io 커스텀 도메인 설정:
+> **베타 단계 권장**: `veritasonus.com` (루트) → 웹앱, `gw.veritasonus.com` → gateway.
+> `app.` 서브도메인은 나중에 모바일 앱 등과 분기가 필요할 때 추가.
+
+### 4-2. DNS 설정
+
+**Vercel (웹앱)**:
+```
+veritasonus.com        A      76.76.21.21          (Vercel IP)
+www.veritasonus.com    CNAME  cname.vercel-dns.com
+```
+또는 Vercel Dashboard → Domains → `veritasonus.com` 추가 후 안내된 레코드 사용.
+
+**Fly.io (gateway)**:
 ```bash
 fly certs add gw.veritasonus.com
-# → DNS에 CNAME veritasonus-gw.fly.dev 추가
+# → Fly가 안내하는 CNAME 레코드를 DNS에 추가
+# 예: gw.veritasonus.com  CNAME  veritasonus-gw.fly.dev
+```
+
+### 4-3. 환경별 URL 정리
+
+| 환경 | 웹앱 | Gateway |
+|---|---|---|
+| Production | `https://veritasonus.com` | `wss://gw.veritasonus.com` |
+| Staging (선택) | `https://staging.veritasonus.com` | `wss://gw-staging.veritasonus.com` |
+| Local dev | `http://localhost:3000` | `ws://localhost:8787` |
+
+### 4-4. 도메인 확정 후 코드 업데이트 (2곳)
+
+```ts
+// src/lib/brand.ts
+export const BRAND_DOMAIN = "veritasonus.com";          // ← 이미 설정됨
+export const BRAND_SUPPORT_EMAIL = "support@veritasonus.com";  // ← 확인 후 실 메일로 교체
+```
+
+```bash
+# Vercel env (NEXT_PUBLIC_GATEWAY_WS_URL)
+NEXT_PUBLIC_GATEWAY_WS_URL=wss://gw.veritasonus.com
+
+# Fly.io secrets (REALTIME_GATEWAY_URL — 웹앱이 서버 사이드에서 호출 시)
+# 현재는 브라우저가 직접 연결하므로 웹앱 서버에는 불필요할 수 있음
 ```
 
 ---
