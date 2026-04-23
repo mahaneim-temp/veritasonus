@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { SessionMode, QualityMode } from "@/types/session";
 import { SESSION_MODE_LABELS } from "@/types/session";
 import type { CreateSessionRequest } from "@/types/api";
+import { LANGS } from "@/lib/constants/languages";
 
 const STEPS = [
   "사용 형태",
@@ -19,13 +20,6 @@ const STEPS = [
   "정확성 우선",
   "녹음/사후정제",
 ] as const;
-
-const LANGS = [
-  { code: "ko", label: "한국어" },
-  { code: "en", label: "English" },
-  { code: "ja", label: "日本語" },
-  { code: "zh", label: "中文" },
-];
 
 export default function PreparedStartPage() {
   const router = useRouter();

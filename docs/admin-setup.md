@@ -4,18 +4,52 @@
 
 ## §1. 최초 관리자(superadmin) 계정 만들기
 
-### 방법 A: Supabase Dashboard (권장 — 최초 1회)
+### 방법 A (권장 — 형의 이메일로 일반 가입 → 승격)
 
-1. **Supabase Dashboard → Authentication → Users** → "Add user" 클릭
-2. 이메일 / 비밀번호 입력 후 생성
-3. 생성된 user의 UUID 복사
-4. **SQL Editor** 에서 아래 실행:
+현재 운영 시나리오. 신규 온보딩 가이드도 직접 검증할 수 있어서 추천.
+
+1. 브라우저 시크릿 창에서 `https://veritasonus.com/signup` 접속.
+2. 형 이메일(예: `mahaneim@gmail.com`) + 비밀번호 + 표시 이름(선택) 입력 → 가입.
+3. 메일 확인 링크 클릭 → `/onboarding` 도달.
+4. 온보딩은 **건너뛰어도 됨** (어차피 superadmin 은 이후 게이트 면제). 완료하면 `/onboarding/next` 까지 확인.
+5. **Supabase Dashboard → SQL Editor** 에서 아래 실행:
 
 ```sql
 -- superadmin 권한 부여 (최고 권한, 모든 admin 기능 사용 가능)
 UPDATE public.users
 SET role = 'superadmin'
+WHERE email = 'mahaneim@gmail.com';  -- 형 이메일로 교체
+
+-- 온보딩 게이트 우회를 위해 preferences 행도 완료 상태로 강제 세팅(선택)
+UPDATE public.user_preferences
+SET onboarding_completed_at = coalesce(onboarding_completed_at, now())
+WHERE user_id = (SELECT id FROM public.users WHERE email = 'mahaneim@gmail.com');
+
+-- 확인
+SELECT u.id, u.email, u.role, p.onboarding_completed_at
+FROM public.users u
+LEFT JOIN public.user_preferences p ON p.user_id = u.id
+WHERE u.role IN ('admin', 'superadmin');
+```
+
+6. 같은 브라우저에서 `/admin` 접속 → 관리자 화면이 뜨면 성공.
+
+### 방법 B: Supabase Dashboard 직접 생성 (자동 메일 미발송)
+
+1. **Supabase Dashboard → Authentication → Users** → "Add user" 클릭
+2. 이메일 / 비밀번호 입력 후 생성(메일 인증 스킵됨)
+3. 생성된 user의 UUID 복사
+4. **SQL Editor** 에서 아래 실행:
+
+```sql
+-- superadmin 권한 부여 + 온보딩 완료 플래그
+UPDATE public.users
+SET role = 'superadmin'
 WHERE id = '<위에서 복사한 UUID>';
+
+UPDATE public.user_preferences
+SET onboarding_completed_at = coalesce(onboarding_completed_at, now())
+WHERE user_id = '<위 UUID>';
 
 -- 확인
 SELECT id, email, role FROM public.users WHERE role IN ('admin', 'superadmin');
@@ -174,7 +208,88 @@ WHERE u.email = 'tester@example.com';
 
 ---
 
-## §8. 긴급 차단 (Abuse 대응)
+## §8. 관리자 권한 확인 절차 (실제 테스트)
+
+관리자 권한이 실제로 먹는지 확인하는 순서. superadmin 승격 직후 1회 실행 권장.
+
+### 8-1. `/admin` 접근
+
+1. superadmin 계정으로 로그인.
+2. 브라우저에서 `https://veritasonus.com/admin` 접속.
+3. 페이지가 404 나 로그인 리다이렉트 없이 열리면 OK.
+4. 일반 회원 계정으로 로그인 후 같은 URL 접속 시 → 차단되어야 함.
+
+### 8-2. 사용자 목록 조회 (/admin/users)
+
+1. `/admin/users` 접속 → TanStack Table 렌더링 확인.
+2. 페이지네이션, 역할 필터 동작 확인.
+3. SQL 레벨 이중 확인:
+   ```sql
+   -- 관리자 권한으로 users 전체 열 조회 가능한지 (RLS 통과 확인)
+   -- Supabase Dashboard 는 service-role 이므로 늘 통과. 앱 레벨에서의 확인이 핵심.
+   SELECT count(*) FROM public.users;
+   ```
+
+### 8-3. 시간 부여(Grant) 가능 여부
+
+1. `/admin/users` 에서 아무 사용자나 선택 → "시간 부여" 버튼 클릭.
+2. 1800 초(30분) + 사유 "권한 확인 테스트" 입력 → 적용.
+3. 해당 사용자 행의 granted_seconds 가 1800 증가했는지 확인.
+4. audit_log 에 기록되었는지:
+   ```sql
+   SELECT created_at, action, target_type, target_id, payload
+   FROM public.audit_log
+   WHERE action LIKE '%grant%'
+   ORDER BY created_at DESC
+   LIMIT 5;
+   ```
+
+### 8-4. 온보딩 게이트 면제 확인
+
+1. superadmin 계정으로 로그인된 상태에서 `/start/quick` 직접 접속.
+2. `/onboarding` 으로 튕기지 않고 바로 `/start/quick` 이 열리면 OK.
+   (미들웨어에서 role 검사하여 admin/superadmin 은 게이트 스킵.)
+3. 반대로 일반 회원이면서 온보딩 미완료인 계정은 `/onboarding?reason=required` 로 리다이렉트되어야 함.
+
+---
+
+## §9. 온보딩 상태 직접 조작 (테스트/지원 용도)
+
+### 특정 사용자의 온보딩 상태 확인
+
+```sql
+SELECT
+  u.email,
+  u.display_name,
+  p.primary_purpose,
+  p.default_source_lang,
+  p.default_target_lang,
+  p.preferred_mode,
+  p.onboarding_completed_at
+FROM public.users u
+LEFT JOIN public.user_preferences p ON p.user_id = u.id
+WHERE u.email = 'target@example.com';
+```
+
+### 온보딩 강제 완료 (건너뛰기 시뮬레이션)
+
+```sql
+UPDATE public.user_preferences
+SET onboarding_completed_at = now()
+WHERE user_id = (SELECT id FROM public.users WHERE email = 'target@example.com');
+```
+
+### 온보딩 강제 리셋 (다시 보여주고 싶을 때)
+
+```sql
+UPDATE public.user_preferences
+SET onboarding_completed_at = NULL
+WHERE user_id = (SELECT id FROM public.users WHERE email = 'target@example.com');
+```
+
+---
+
+## §10. 긴급 차단 (Abuse 대응)
 
 ```sql
 -- 사용자 역할을 blocked 또는 제거 (현재 role 컬럼으로 처리)

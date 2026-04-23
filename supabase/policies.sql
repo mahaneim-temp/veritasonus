@@ -11,6 +11,8 @@ alter table public.utterances      enable row level security;
 alter table public.reconstructions enable row level security;
 alter table public.billing_events  enable row level security;
 alter table public.quality_events  enable row level security;
+alter table public.user_preferences enable row level security;
+alter table public.user_terms       enable row level security;
 
 -- ── users ────────────────────────────────────────────────────
 drop policy if exists users_self_read   on public.users;
@@ -121,6 +123,34 @@ drop policy if exists quality_admin_read on public.quality_events;
 
 create policy quality_admin_read on public.quality_events
   for select using (public.is_admin());
+
+-- ── user_preferences ─────────────────────────────────────────
+drop policy if exists prefs_owner_read   on public.user_preferences;
+drop policy if exists prefs_owner_upsert on public.user_preferences;
+drop policy if exists prefs_owner_update on public.user_preferences;
+drop policy if exists prefs_admin_all    on public.user_preferences;
+
+create policy prefs_owner_read on public.user_preferences
+  for select using (auth.uid() = user_id);
+
+create policy prefs_owner_upsert on public.user_preferences
+  for insert with check (auth.uid() = user_id);
+
+create policy prefs_owner_update on public.user_preferences
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy prefs_admin_all on public.user_preferences
+  for all using (public.is_admin()) with check (public.is_admin());
+
+-- ── user_terms (v1.1 용어 바이어싱) ─────────────────────────
+drop policy if exists terms_owner_all on public.user_terms;
+drop policy if exists terms_admin_all on public.user_terms;
+
+create policy terms_owner_all on public.user_terms
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy terms_admin_all on public.user_terms
+  for all using (public.is_admin()) with check (public.is_admin());
 
 -- ============================================================
 -- Storage 버킷 정책 (Supabase Storage)

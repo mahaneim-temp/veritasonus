@@ -2,13 +2,26 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabaseClient } from "@/lib/supabase/client";
 
+/**
+ * Supabase auth 에러 메시지를 사용자가 이해할 수 있는 한국어로 매핑.
+ */
+function humanizeAuthError(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes("invalid login") || m.includes("invalid credentials"))
+    return "이메일 또는 비밀번호가 올바르지 않습니다.";
+  if (m.includes("email not confirmed") || m.includes("not confirmed"))
+    return "이메일 인증이 완료되지 않았습니다. 메일함의 확인 링크를 먼저 클릭해 주세요. (관리자가 인증 요구를 해제했다면 새 계정으로 다시 가입해 주세요.)";
+  if (m.includes("rate limit"))
+    return "요청이 많아 일시적으로 제한되었습니다. 잠시 후 다시 시도해 주세요.";
+  return raw;
+}
+
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,14 +36,14 @@ function LoginForm() {
       email,
       password,
     });
-    setBusy(false);
     if (error) {
-      setError(error.message);
+      setBusy(false);
+      setError(humanizeAuthError(error.message));
       return;
     }
-    // ?next= 파라미터가 있으면 해당 경로로, 없으면 홈으로
+    // 전체 리로드로 middleware 가 새 쿠키를 확실히 집어가게 한다.
     const next = searchParams.get("next") ?? "/";
-    router.push(next as never);
+    window.location.assign(next);
   }
 
   return (

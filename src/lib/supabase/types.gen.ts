@@ -476,6 +476,78 @@ export interface Database {
         };
         Relationships: [];
       };
+      user_preferences: {
+        Row: {
+          user_id: string;
+          primary_purpose: string[];
+          domain_tags: string[];
+          default_source_lang: string | null;
+          default_target_lang: string | null;
+          preferred_mode: Database["public"]["Enums"]["session_mode"] | null;
+          default_quality_mode: Database["public"]["Enums"]["quality_mode"];
+          wants_term_registration: boolean;
+          onboarding_completed_at: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          primary_purpose?: string[];
+          domain_tags?: string[];
+          default_source_lang?: string | null;
+          default_target_lang?: string | null;
+          preferred_mode?: Database["public"]["Enums"]["session_mode"] | null;
+          default_quality_mode?: Database["public"]["Enums"]["quality_mode"];
+          wants_term_registration?: boolean;
+          onboarding_completed_at?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          primary_purpose?: string[];
+          domain_tags?: string[];
+          default_source_lang?: string | null;
+          default_target_lang?: string | null;
+          preferred_mode?: Database["public"]["Enums"]["session_mode"] | null;
+          default_quality_mode?: Database["public"]["Enums"]["quality_mode"];
+          wants_term_registration?: boolean;
+          onboarding_completed_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      user_terms: {
+        Row: {
+          id: string;
+          user_id: string;
+          source_text: string;
+          target_text: string;
+          lang_pair: string;
+          domain_tag: string | null;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          source_text: string;
+          target_text: string;
+          lang_pair: string;
+          domain_tag?: string | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          source_text?: string;
+          target_text?: string;
+          lang_pair?: string;
+          domain_tag?: string | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       credit_packs_ledger: {
         Row: {
           id: string;

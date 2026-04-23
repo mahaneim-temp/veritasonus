@@ -265,7 +265,35 @@ ALTER TABLE public.guest_sessions
   ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'trial'
   CHECK (mode IN ('trial', 'taste'));
 
--- ── new-user trigger (auth.users → public.users 동기화) ──────
+-- 2026-04-23: signup/onboarding redesign — Step 2 온보딩 수집값
+CREATE TABLE IF NOT EXISTS public.user_preferences (
+  user_id uuid PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+  primary_purpose text[] NOT NULL DEFAULT '{}',
+  domain_tags text[] NOT NULL DEFAULT '{}',
+  default_source_lang text,
+  default_target_lang text,
+  preferred_mode session_mode,
+  default_quality_mode quality_mode NOT NULL DEFAULT 'auto',
+  wants_term_registration boolean NOT NULL DEFAULT false,
+  onboarding_completed_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 2026-04-23: v1.1 용어 바이어싱 사전 준비 (이번 릴리스에선 스키마만)
+CREATE TABLE IF NOT EXISTS public.user_terms (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  source_text text NOT NULL,
+  target_text text NOT NULL,
+  lang_pair text NOT NULL,
+  domain_tag text,
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS user_terms_by_user
+  ON public.user_terms(user_id, lang_pair);
+
+-- ── new-user trigger (auth.users → public.users + user_preferences) ──────
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -281,6 +309,11 @@ begin
     new.raw_user_meta_data->>'display_name'
   )
   on conflict (id) do nothing;
+
+  insert into public.user_preferences (user_id)
+  values (new.id)
+  on conflict (user_id) do nothing;
+
   return new;
 end;
 $$;

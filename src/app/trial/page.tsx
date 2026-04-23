@@ -4,7 +4,7 @@
  */
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Zap, Info, ArrowRight } from "lucide-react";
@@ -24,13 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabaseClient } from "@/lib/supabase/client";
-
-const LANGS = [
-  { code: "ko", label: "한국어" },
-  { code: "en", label: "English" },
-  { code: "ja", label: "日本語" },
-  { code: "zh", label: "中文" },
-];
+import { LANGS } from "@/lib/constants/languages";
 
 export default function TrialLandingPage() {
   const router = useRouter();
@@ -38,6 +32,14 @@ export default function TrialLandingPage() {
   const [target, setTarget] = useState("en");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // 체험에서 고른 언어쌍을 24h 쿠키로 남겨둔다. 가입(/signup → /onboarding) 화면이 읽어서 프리필.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const pair = `${source}-${target}`;
+    const oneDay = 60 * 60 * 24;
+    document.cookie = `trial_lang_pair=${encodeURIComponent(pair)}; max-age=${oneDay}; path=/; samesite=lax`;
+  }, [source, target]);
 
   async function startTaste() {
     setBusy(true);
